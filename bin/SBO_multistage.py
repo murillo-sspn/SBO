@@ -42,5 +42,3 @@ print_banner()
 DIR = os.getcwd() + '/'
 
 INFile = DIR + sys.argv[-1]
-
-breakpoint()
