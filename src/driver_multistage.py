@@ -82,15 +82,48 @@ class Driver(Thermo):
         surrogate_models = []
         # Looping output variables
         for key_var_dependent in self.keys_var_dependent:
-            Y_training      = self.dataset_training[key_var_dependent].transpose()
-            Y_validation    = self.dataset_validation[key_var_dependent].transpose()
-            Y_surrogate_models = []
+            y_training      = self.dataset_training[key_var_dependent].transpose()
+            y_validation    = self.dataset_validation[key_var_dependent].transpose()
+            y_surrogate_models = []
             # Looping metamodels
             for model_type in self.IN['surrogate_models']:
+                # Create and train metamodel
                 model = SurrogateFactory.create(model_type, self.IN)
-                model.train(X_training, Y_training)
-                Y_surrogate_models.append(model)
-            surrogate_models.append(Y_surrogate_models)
+                model.train(X_training, y_training)
+
+                # Get validation results
+                y_predicted = np.array([model.predict(X_validation)]).transpose()
+                summary = dict({'model': model,
+                                'validation': model.validate(y_validation, y_predicted)})
+                y_surrogate_models.append(summary)
+
+                # Plot validation results
+                self._plot_model_validation(y_validation, y_predicted, model_type, key_var_dependent)
+
+                # Prints to screen
+                res_txt = ''
+                for key, val in summary['validation'].items(): res_txt += f'\t{key}={"%0.2e"%val}'
+                log_print(f"{key_var_dependent}\t{model_type}{res_txt}")
+
+            surrogate_models.append(y_surrogate_models)
+
+    def _plot_model_validation(self, y_validation, y_predicted, model, key_var_dependent):
+
+        x_label = 'Validation data'
+        y_label = 'Predicted data'
+        title = f"Validation and predicted data:\n{key_var_dependent} ({model})"
+        filename = f"Validation-{key_var_dependent}-{model}"
+        y_45 = np.array([np.linspace(min(np.amin(y_validation),np.amin(y_predicted)),
+                                     max(np.amax(y_validation), np.amax(y_predicted)),
+                                     2)]).transpose()
+
+        plot_SBO(x_label, y_label, title,
+                 X0=y_validation, Y0=y_predicted, x0y0_kind="points", labels_list_x0=["data"],
+                 X1=y_45, Y1=y_45, x1y1_kind="dotted", labels_list_x1=["y=x"],
+                 flag_aspect_ratio=True,
+                 output_directory=self.directories.outputs_directory, loc='upper left',
+                 filename=filename)
+
 
     # -----------------------------------------------------#
     # Plotting

@@ -24,6 +24,9 @@ from sklearn.neural_network import MLPRegressor
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from smt.surrogate_models import KRG, RBF
 
+#-----------------------------------------------------#
+# Importing SBO packages
+#-----------------------------------------------------#
 
 # -------------------------------
 # Abstract Base Surrogate Model
@@ -40,12 +43,17 @@ class SurrogateModel(ABC):
     def predict(self, X):
         pass
 
-    def evaluate(self, X, y):
-        y_pred = self.predict(X)
-        rmse = mean_squared_error(y, y_pred, squared=False)
+    def validate(self, y, y_pred):
+
+        rmse = mean_squared_error(y, y_pred)
         r2 = r2_score(y, y_pred)
         mae = mean_absolute_error(y, y_pred)
-        return {"RMSE": rmse, "R2": r2, "MAE": mae}
+
+        return {
+            "R2": r2,
+            "RMSE": rmse,
+            "MAE": mae
+        }
 
 
 # -------------------------------
@@ -59,7 +67,6 @@ class KrigingModel(SurrogateModel):
     def train(self, X, y):
         self.model.set_training_values(X, y)
         self.model.train()
-        print("Kriging model trained.")
 
     def predict(self, X):
         return self.model.predict_values(X).ravel()
@@ -76,7 +83,6 @@ class RBFModel(SurrogateModel):
     def train(self, X, y):
         self.model.set_training_values(X, y)
         self.model.train()
-        print("RBF model trained.")
 
     def predict(self, X):
         return self.model.predict_values(X).ravel()
@@ -100,7 +106,6 @@ class NNModel(SurrogateModel):
 
     def train(self, X, y):
         self.model.fit(X, y)
-        print("Neural Network model trained.")
 
     def predict(self, X):
         return self.model.predict(X)
@@ -120,36 +125,3 @@ class SurrogateFactory:
             return NNModel(cfg)
         else:
             raise ValueError(f"Unknown surrogate model type: {model_type}")
-
-# -------------------------------
-# Model Evaluator
-# -------------------------------
-class ModelEvaluator:
-    """Evaluate the accuracy of surrogate models using different metrics."""
-    def __init__(self, model):
-        self.model = model
-
-    def evaluate(self, X, y):
-        y_pred = self.model.predict(X)
-        rmse = mean_squared_error(y, y_pred, squared=False)
-        r2 = r2_score(y, y_pred)
-        mae = mean_absolute_error(y, y_pred)
-        # Leave-One-Out Cross Validation (LOOCV)
-        loocv_errors = []
-        for i in range(len(X)):
-            X_train = np.delete(X, i, axis=0)
-            y_train = np.delete(y, i)
-            self.model.train(X_train, y_train)
-            y_pred_i = self.model.predict(X[i].reshape(1, -1))
-            loocv_errors.append((y[i] - y_pred_i[0]) ** 2)
-        loocv_rmse = np.sqrt(np.mean(loocv_errors))
-        # Retrain full model after LOOCV
-        self.model.train(X, y)
-
-        return {
-            "R2": r2,
-            "RMSE": rmse,
-            "MAE": mae,
-            "LOOCV_RMSE": loocv_rmse
-        }
-

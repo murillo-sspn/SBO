@@ -393,6 +393,17 @@ class Plotting():
             points.set_linewidth(2)
             points.set_label(label)
 
+        elif "points" in kind:
+            points.set_marker("o")
+            points.set_markersize(5)
+            points.set_markeredgewidth(1)
+            points.set_markeredgecolor("k")
+            points.set_markerfacecolor("w")
+            points.set_linestyle("")
+            self._set_func(points.set_color, color, "k")
+            points.set_linewidth(2)
+            points.set_label(label)
+
     def _set_func(self, func, input, default):
         func(default) if input == None else func(input)
 
