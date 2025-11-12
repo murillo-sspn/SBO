@@ -53,13 +53,13 @@ class Plotting():
 
     def __init__(self, x_label: str, y_label: str, title: str, x_lim=None, y_lim=None,
                  z_label=None, X_contour=None, Y_contour=None, Z_contour=None, levels_contour=20, cmap='viridis',
-                 X0=None, Y0=None, labels_list_x0=None, colors_0=None, x0y0_kind="evalpts",
-                 X1=None, Y1=None, labels_list_x1=None, colors_1=None, x1y1_kind="ctrlpts",
-                 X2=None, Y2=None, labels_list_x2=None, colors_2=None, x2y2_kind="gridpts",
-                 X3=None, Y3=None, labels_list_x3=None, colors_3=None, x3y3_kind="xy",
-                 X4=None, Y4=None, labels_list_x4=None, colors_4=None, x4y4_kind="pareto",
-                 X5=None, Y5=None, labels_list_x5=None, colors_5=None, x5y5_kind="history",
-                 X6=None, Y6=None, labels_list_x6=None, colors_6=None, x6y6_kind="opt",
+                 X0=None, Y0=None, labels_list_x0=None, colors_0=None, x0y0_kind="evalpts", ha_0=None, va_0=None,
+                 X1=None, Y1=None, labels_list_x1=None, colors_1=None, x1y1_kind="ctrlpts", ha_1=None, va_1=None,
+                 X2=None, Y2=None, labels_list_x2=None, colors_2=None, x2y2_kind="gridpts", ha_2=None, va_2=None,
+                 X3=None, Y3=None, labels_list_x3=None, colors_3=None, x3y3_kind="xy",      ha_3=None, va_3=None,
+                 X4=None, Y4=None, labels_list_x4=None, colors_4=None, x4y4_kind="pareto",  ha_4=None, va_4=None,
+                 X5=None, Y5=None, labels_list_x5=None, colors_5=None, x5y5_kind="history", ha_5=None, va_5=None,
+                 X6=None, Y6=None, labels_list_x6=None, colors_6=None, x6y6_kind="opt",     ha_6=None, va_6=None,
                  flag_ranges=False, index_ranges=0, X_L=None, X_U=None, Y_L=None, Y_U=None,
                  flag_rotate_second_and_penultimate_ranges=False,
                  flag_multiple_colors=False,
@@ -67,25 +67,48 @@ class Plotting():
                  flag_grid=True, flag_aspect_ratio=False, flag_colorbar=False,
                  flag_show=False, output_directory=None, filename='figure', extensions=['png', 'pdf']):
 
+        # Chart
         self.x_label, self.y_label, self.title, self.x_lim, self.y_lim = x_label, y_label, title, x_lim, y_lim
-        self.z_label, self.X_contour, self.Y_contour, self.Z_contour, self.levels_contour, self.cmap = z_label, X_contour, Y_contour, Z_contour, levels_contour, cmap
-        self.X0, self.Y0, self.labels_list_x0, self.colors_0, self.x0y0_kind = X0, Y0, labels_list_x0, colors_0, x0y0_kind
-        self.X1, self.Y1, self.labels_list_x1, self.colors_1, self.x1y1_kind = X1, Y1, labels_list_x1, colors_1, x1y1_kind
-        self.X2, self.Y2, self.labels_list_x2, self.colors_2, self.x2y2_kind = X2, Y2, labels_list_x2, colors_2, x2y2_kind
-        self.X3, self.Y3, self.labels_list_x3, self.colors_3, self.x3y3_kind = X3, Y3, labels_list_x3, colors_3, x3y3_kind
-        self.X4, self.Y4, self.labels_list_x4, self.colors_4, self.x4y4_kind = X4, Y4, labels_list_x4, colors_4, x4y4_kind
-        self.X5, self.Y5, self.labels_list_x5, self.colors_5, self.x5y5_kind = X5, Y5, labels_list_x5, colors_5, x5y5_kind
-        self.X6, self.Y6, self.labels_list_x6, self.colors_6, self.x6y6_kind = X6, Y6, labels_list_x6, colors_6, x6y6_kind
+        # Contour
+        self.z_label, self.X_contour, self.Y_contour, self.Z_contour = z_label, X_contour, Y_contour, Z_contour
+        self.levels_contour, self.cmap = levels_contour, cmap
+
+        # Summary lists
+        self.X              = [X0, X1, X2, X3, X4, X5, X6]
+        self.Y              = [Y0, Y1, Y2, Y3, Y4, Y5, Y6]
+        self.labels_list    = [labels_list_x0, labels_list_x1, labels_list_x2,
+                               labels_list_x3, labels_list_x4, labels_list_x5,
+                               labels_list_x6]
+        self.colors         = [colors_0, colors_1, colors_2, colors_3,
+                               colors_4, colors_5, colors_6]
+        self.xy_kind        = [x0y0_kind, x1y1_kind, x2y2_kind, x3y3_kind,
+                               x4y4_kind, x5y5_kind, x6y6_kind]
+        self.ha             = [ha_0, ha_1, ha_2, ha_3, ha_4, ha_5, ha_6]
+        self.va             = [va_0, va_1, va_2, va_3, va_4, va_5, va_6]
+        # Maximum number of plots
+        self.N_plots_max    = len(self.X)
+        # Initializing flag
+        self.flag_labels_exist = False
+
+        # Annotations
+        for i in range(self.N_plots_max):
+            if not(isinstance(self.ha[i], np.ndarray) or isinstance(self.ha[i], list)):
+                self.ha[i] = ['center', 'center', 'center', 'center']
+                self.va[i] = ['center', 'center', 'center', 'center']
 
         self.flag_ranges, self.index_ranges, self.X_L, self.X_U, self.Y_L, self.Y_U = flag_ranges, index_ranges, X_L, X_U, Y_L, Y_U
+        self.flag_ranges_list = [(self.flag_ranges and i == self.index_ranges) for i in range(self.N_plots_max)]
         self.flag_rotate_second_and_penultimate_ranges = flag_rotate_second_and_penultimate_ranges
         self.flag_multiple_colors = flag_multiple_colors
         self.fig, self.ax = fig, ax
+        self.flag_fig_is_none = False
         self.loc = loc
         self.flag_grid = flag_grid
         self.flag_aspect_ratio = flag_aspect_ratio
         self.flag_colorbar = flag_colorbar
         self.flag_show = flag_show
+
+        # Saving information
         self.output_directory = output_directory
         self.filename = filename
         self.extensions = extensions
@@ -106,9 +129,9 @@ class Plotting():
 
         """
 
-        flag_fig_is_none = False
+
         if self.fig == None or self.ax == None:
-            flag_fig_is_none = True
+            self.flag_fig_is_none = True
             self.fig, self.ax = plt.subplots(num=1)
 
         self.ax.ticklabel_format(useOffset=False)
@@ -116,7 +139,7 @@ class Plotting():
         if self.flag_grid: self.ax.grid(True, color='lightgray', linestyle='-', linewidth=0.5)
 
         # -----------------------------------------------------#
-        # Contour
+        # Contours
         # -----------------------------------------------------#
 
         if not(self.z_label == None):
@@ -126,35 +149,47 @@ class Plotting():
             cbar.set_label(self.z_label)
 
         # -----------------------------------------------------#
-        # Coordinates
+        # Points
         # -----------------------------------------------------#
 
-        self.flag_labels_exist = False
-        flag_ranges_list = [(self.flag_ranges and i == self.index_ranges) for i in range(7)]
+        for i in range(self.N_plots_max):
+            self._plot_XiYi(self.X[i], self.Y[i], self.labels_list[i],
+                            self.colors[i], self.xy_kind[i], self.flag_ranges_list[i])
 
-        self._plot_XiYi(self.X0, self.Y0, self.labels_list_x0, self.colors_0, self.x0y0_kind, flag_ranges_list[0])
-        self._plot_XiYi(self.X1, self.Y1, self.labels_list_x1, self.colors_1, self.x1y1_kind, flag_ranges_list[1])
-        self._plot_XiYi(self.X2, self.Y2, self.labels_list_x2, self.colors_2, self.x2y2_kind, flag_ranges_list[2])
-        self._plot_XiYi(self.X3, self.Y3, self.labels_list_x3, self.colors_3, self.x3y3_kind, flag_ranges_list[3])
-        self._plot_XiYi(self.X4, self.Y4, self.labels_list_x4, self.colors_4, self.x4y4_kind, flag_ranges_list[4])
-        self._plot_XiYi(self.X5, self.Y5, self.labels_list_x5, self.colors_5, self.x5y5_kind, flag_ranges_list[5])
-        self._plot_XiYi(self.X6, self.Y6, self.labels_list_x6, self.colors_6, self.x6y6_kind, flag_ranges_list[6])
+        # -----------------------------------------------------#
+        # Annotations
+        # -----------------------------------------------------#
+
+        for i, _xy_kind in enumerate(self.xy_kind):
+            if _xy_kind == "annotate":
+                n = len(self.X[i])
+                for j in range(n):
+                    self.ax.text(self.X[i][j], self.Y[i][j], self.labels_list[i][j],
+                                 fontsize=10, color='black',
+                                 ha=self.ha[i][j], va=self.va[i][j],
+                                 bbox=dict(
+                                     boxstyle='round,pad=0.3',   # rounded box with small padding
+                                     facecolor='white',          # white background
+                                     edgecolor='black',          # outline color
+                                     linewidth=0.8,              # thin black border
+                                     alpha=0.9                   # slight transparency (optional)
+                                 ))
 
         # -----------------------------------------------------#
         # Chart
         # -----------------------------------------------------#
 
-        _set_axis_attribute(self.fig, self.ax, self.x_label, self.y_label, self.title, self.x_lim, self.y_lim,
+        self._set_axis_attribute(self.fig, self.ax, self.x_label, self.y_label, self.title, self.x_lim, self.y_lim,
                             self.flag_aspect_ratio)
 
         if self.flag_labels_exist:  self.ax.legend(loc=self.loc)
 
-        _save_chart(self.fig, self.extensions, self.filename, self.output_directory)
+        self._save_chart(self.fig, self.extensions, self.filename, self.output_directory)
 
-        _show_chart(self.flag_show)
+        self._show_chart(self.flag_show)
 
         self.ax.cla()
-        if flag_fig_is_none:
+        if self.flag_fig_is_none:
             self.fig.clf()
             plt.close(self.fig)
 
@@ -236,145 +271,147 @@ class Plotting():
                 label = labels_list_xi[i]
                 if label != "":                 _kwargs["label"] = label
                 if self.flag_multiple_colors:   _kwargs["color"] = colors_i[i]
-                _plot_setup(points, **_kwargs)
+                self._plot_setup(points, **_kwargs)
 
 
-# -----------------------------------------------------#
-# Auxiliary
-# -----------------------------------------------------#
+    # -----------------------------------------------------#
+    # Auxiliary
+    # -----------------------------------------------------#
 
-def _plot_setup(points, kind, label=None, color=None):
-    if "evalpts" in kind:
-        points.set_marker("")
-        points.set_markersize(4.0)
-        points.set_markeredgewidth(0.35)
-        points.set_markeredgecolor("k")
-        points.set_markerfacecolor("w")
-        points.set_linestyle("-")
-        _set_func(points.set_color, color, "k")
-        points.set_linewidth(2)
-        points.set_label(label)
+    def _plot_setup(self, points, kind, label=None, color=None):
+        if "evalpts" in kind:
+            points.set_marker("")
+            points.set_markersize(4.0)
+            points.set_markeredgewidth(0.35)
+            points.set_markeredgecolor("k")
+            points.set_markerfacecolor("w")
+            points.set_linestyle("-")
+            self._set_func(points.set_color, color, "k")
+            points.set_linewidth(2)
+            points.set_label(label)
 
-    elif "ctrlpts" in kind:
-        points.set_marker("o")
-        points.set_markersize(5)
-        points.set_markeredgewidth(1)
-        points.set_markeredgecolor("k")
-        points.set_markerfacecolor("r")
-        if kind == "ctrlpts":
+        elif "ctrlpts" in kind:
+            points.set_marker("o")
+            points.set_markersize(5)
+            points.set_markeredgewidth(1)
+            points.set_markeredgecolor("k")
+            points.set_markerfacecolor("r")
+            if kind == "ctrlpts":
+                points.set_linestyle('dotted')
+            elif kind == "ctrlpts2":
+                points.set_linestyle('')
+            self._set_func(points.set_color, color, "r")
+            points.set_linewidth(1.5)
+            points.set_label(label)
+
+        elif "gridpts" in kind:
+            points.set_marker("o")
+            points.set_markersize(4.0)
+            points.set_markeredgewidth(0.35)
+            points.set_markeredgecolor("k")
+            points.set_markerfacecolor("w")
+            points.set_linestyle("-")
+            self._set_func(points.set_color, color, "k")
+            points.set_linewidth(2)
+            points.set_label(label)
+
+        elif "xy" in kind:
+            points.set_marker("")
+            points.set_markersize(1)
+            points.set_markeredgewidth(0.35)
+            points.set_markeredgecolor("k")
+            points.set_markerfacecolor("w")
+            points.set_linestyle("-")
+            self._set_func(points.set_color, color, "k")
+            points.set_linewidth(2)
+            points.set_label(label)
+
+        elif "pareto" in kind:
+
+            points.set_marker("o")
+            points.set_markersize(6)
+            points.set_markeredgewidth(1)
+            points.set_markeredgecolor("k")
+            points.set_markerfacecolor("k")
             points.set_linestyle('dotted')
-        elif kind == "ctrlpts2":
-            points.set_linestyle('')
-        _set_func(points.set_color, color, "r")
-        points.set_linewidth(1.5)
-        points.set_label(label)
+            points.set_color("k")
+            points.set_linewidth(2)
+            points.set_label(label)
 
-    elif "gridpts" in kind:
-        points.set_marker("o")
-        points.set_markersize(4.0)
-        points.set_markeredgewidth(0.35)
-        points.set_markeredgecolor("k")
-        points.set_markerfacecolor("w")
-        points.set_linestyle("-")
-        _set_func(points.set_color, color, "k")
-        points.set_linewidth(2)
-        points.set_label(label)
+        elif "history" in kind:
+            points.set_marker("o")
+            points.set_markersize(4)
+            points.set_markeredgewidth(1)
+            self._set_func(points.set_markeredgecolor, color, "b")
+            self._set_func(points.set_markerfacecolor, color, "w")
+            points.set_linestyle(" ")
+            points.set_color("k")
+            points.set_linewidth(0.50)
+            points.set_label(label)
 
-    elif "xy" in kind:
-        points.set_marker("")
-        points.set_markersize(1)
-        points.set_markeredgewidth(0.35)
-        points.set_markeredgecolor("k")
-        points.set_markerfacecolor("w")
-        points.set_linestyle("-")
-        _set_func(points.set_color, color, "k")
-        points.set_linewidth(2)
-        points.set_label(label)
+        elif "opt" in kind:
+            points.set_marker("*")
+            points.set_markersize(14)
+            points.set_markeredgewidth(1.5)
+            points.set_markeredgecolor('darkred')
+            points.set_markerfacecolor('red')
+            points.set_linestyle(" ")
+            points.set_color("r")
+            points.set_linewidth(0.50)
+            points.set_label(label)
 
-    elif "pareto" in kind:
+        elif "training" in kind:
+            points.set_marker(".")
+            points.set_markersize(10)
+            points.set_markeredgewidth(1.5)
+            points.set_markeredgecolor('k')
+            points.set_markerfacecolor('k')
+            points.set_linestyle(" ")
+            points.set_color("k")
+            points.set_linewidth(0.50)
+            points.set_label(label)
 
-        points.set_marker("o")
-        points.set_markersize(6)
-        points.set_markeredgewidth(1)
-        points.set_markeredgecolor("k")
-        points.set_markerfacecolor("k")
-        points.set_linestyle('dotted')
-        points.set_color("k")
-        points.set_linewidth(2)
-        points.set_label(label)
+        elif "validation" in kind:
+            points.set_marker("*")
+            points.set_markersize(10)
+            points.set_markeredgewidth(1.5)
+            points.set_markeredgecolor('k')
+            points.set_markerfacecolor('k')
+            points.set_linestyle(" ")
+            points.set_color("k")
+            points.set_linewidth(0.50)
+            points.set_label(label)
 
-    elif "history" in kind:
-        points.set_marker("o")
-        points.set_markersize(4)
-        points.set_markeredgewidth(1)
-        _set_func(points.set_markeredgecolor, color, "b")
-        _set_func(points.set_markerfacecolor, color, "w")
-        points.set_linestyle(" ")
-        points.set_color("k")
-        points.set_linewidth(0.50)
-        points.set_label(label)
+        elif "dotted" in kind:
+            points.set_marker("")
+            points.set_markersize(1)
+            points.set_markeredgewidth(0.35)
+            points.set_markeredgecolor("k")
+            points.set_markerfacecolor("w")
+            points.set_linestyle("dotted")
+            self._set_func(points.set_color, color, "k")
+            points.set_linewidth(2)
+            points.set_label(label)
 
-    elif "opt" in kind:
-        points.set_marker("*")
-        points.set_markersize(14)
-        points.set_markeredgewidth(1.5)
-        points.set_markeredgecolor('darkred')
-        points.set_markerfacecolor('red')
-        points.set_linestyle(" ")
-        points.set_color("r")
-        points.set_linewidth(0.50)
-        points.set_label(label)
+    def _set_func(self, func, input, default):
+        func(default) if input == None else func(input)
 
-    elif "training" in kind:
-        points.set_marker(".")
-        points.set_markersize(10)
-        points.set_markeredgewidth(1.5)
-        points.set_markeredgecolor('k')
-        points.set_markerfacecolor('k')
-        points.set_linestyle(" ")
-        points.set_color("k")
-        points.set_linewidth(0.50)
-        points.set_label(label)
+    def _set_axis_attribute(self, fig, ax, x_label, y_label, title, x_lim, y_lim, flag_aspect_ratio, flag_rotate_xticks=True):
+        ax.set_xlabel(x_label, fontsize=12, color='k')
+        ax.set_ylabel(y_label, fontsize=12, color='k')
+        ax.set_title(title, fontsize=14, color='k')
+        if not (x_lim is None): ax.set_xlim(x_lim)
+        if not (y_lim is None): ax.set_ylim(y_lim)
+        if flag_rotate_xticks: plt.setp(ax.get_xticklabels(), rotation=30, ha='right')
+        ax.set_aspect(1.00) if flag_aspect_ratio else fig.tight_layout()
+        if flag_rotate_xticks: fig.subplots_adjust(bottom=0.20)
 
-    elif "validation" in kind:
-        points.set_marker("*")
-        points.set_markersize(10)
-        points.set_markeredgewidth(1.5)
-        points.set_markeredgecolor('k')
-        points.set_markerfacecolor('k')
-        points.set_linestyle(" ")
-        points.set_color("k")
-        points.set_linewidth(0.50)
-        points.set_label(label)
+    def _save_chart(self, fig, extensions, filename, output_directory):
+        for ext in extensions:
+            filename_with_extension = f"{filename}.{ext}"
+            fig.savefig(os.path.join(output_directory, filename_with_extension))
 
-    elif "dotted" in kind:
-        points.set_marker("")
-        points.set_markersize(1)
-        points.set_markeredgewidth(0.35)
-        points.set_markeredgecolor("k")
-        points.set_markerfacecolor("w")
-        points.set_linestyle("dotted")
-        _set_func(points.set_color, color, "k")
-        points.set_linewidth(2)
-        points.set_label(label)
+    def _show_chart(self, flag_show):
+        if flag_show: plt.show()
 
-def _set_func(func, input, default):
-    func(default) if input == None else func(input)
 
-def _set_axis_attribute(fig, ax, x_label, y_label, title, x_lim, y_lim, flag_aspect_ratio, flag_rotate_xticks=True):
-    ax.set_xlabel(x_label, fontsize=12, color='k')
-    ax.set_ylabel(y_label, fontsize=12, color='k')
-    ax.set_title(title, fontsize=14, color='k')
-    if not (x_lim is None): ax.set_xlim(x_lim)
-    if not (y_lim is None): ax.set_ylim(y_lim)
-    if flag_rotate_xticks: plt.setp(ax.get_xticklabels(), rotation=30, ha='right')
-    ax.set_aspect(1.00) if flag_aspect_ratio else fig.tight_layout()
-    if flag_rotate_xticks: fig.subplots_adjust(bottom=0.20)
-
-def _save_chart(fig, extensions, filename, output_directory):
-    for ext in extensions:
-        filename_with_extension = f"{filename}.{ext}"
-        fig.savefig(os.path.join(output_directory, filename_with_extension))
-
-def _show_chart(flag_show):
-    if flag_show: plt.show()

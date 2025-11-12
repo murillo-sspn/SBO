@@ -59,8 +59,6 @@ class SBO():
 
         driver = Driver(self.IN, self.directories)
 
-        breakpoint()
-
         # -----------------------------------------------------#
         # Finalization
         # -----------------------------------------------------#

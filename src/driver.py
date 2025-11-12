@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 #######################################################
 #                                                     #
 #           Surrogate Based Optimization              #
@@ -16,7 +15,6 @@
 # Description:                                        #
 #######################################################
 
-
 #-----------------------------------------------------#
 # Importing general packages
 #-----------------------------------------------------#
@@ -27,90 +25,72 @@ import CoolProp.CoolProp as CP
 #-----------------------------------------------------#
 from common.utils import *
 from common.plotter import *
+from src.models import *
+from src.thermo import Thermo
 
-class Driver():
+class Driver(Thermo):
+
     def __init__(self, IN, directories):
+        super().__init__()
+        # Arguments
         self.IN = IN
         self.directories = directories
         # Reading datasets
-        self.dataset_training = csv_to_dict(self.IN['dataset_training'])
-        self.N_training = np.amax(np.shape(self.dataset_training[self.IN['var_independent'][0]]))
-        self.dataset_validation = csv_to_dict(self.IN['dataset_validation'])
-        self.N_validation = np.amax(np.shape(self.dataset_validation[self.IN['var_independent'][0]]))
+        self.keys_var_dependent     = self.IN['var_dependent']
+        self.keys_var_independent   = self.IN['var_independent']
+        self.dataset_training       = csv_to_dict(self.IN['dataset_training'])
+        self.N_training             = np.amax(np.shape(self.dataset_training[self.keys_var_independent[0]]))
+        self.dataset_validation     = csv_to_dict(self.IN['dataset_validation'])
+        self.N_validation           = np.amax(np.shape(self.dataset_validation[self.keys_var_independent[0]]))
         # Internal datasets
         self.dataset = {}
 
-        # Inlet state
-        self.get_inlet_state()
-        # Set saturation curve
-        self.set_saturation_curve()
-        # Set isobars
-        self.set_isobars_inlet()
+        # Pre process
+        self.pre_process()
 
-        # Plot
-        self.plot_training_and_validation_contours()
+        # Train models
+        self.train_models()
 
-        breakpoint()
+
 
     # -----------------------------------------------------#
     # Pre processing
     # -----------------------------------------------------#
 
-    def get_inlet_state(self):
+    def pre_process(self):
 
-        self.dataset_training['s01'] = np.array([[CP.PropsSI('S',
-                                                             'T', self.dataset_training['T01'][0, i],
-                                                             'P', self.dataset_training['P01'][0, i],
-                                                             self.IN['fluid']) for i in range(self.N_training)]])
+        self._compute_variables()
+        self._set_saturation_curve()
+        self._set_isobars_inlet()
+        self.plot_training_and_validation_contours()
 
-        self.dataset_validation['s01'] = np.array([[CP.PropsSI('S',
-                                                               'T', self.dataset_validation['T01'][0, i],
-                                                               'P', self.dataset_validation['P01'][0, i],
-                                                               self.IN['fluid']) for i in range(self.N_validation)]])
+    def _compute_variables(self):
 
-    def set_saturation_curve(self):
-        # Getting saturation curves
-        T_crit = CP.PropsSI('Tcrit', self.IN['fluid'])
+        datasets = [self.dataset_training, self.dataset_validation]
+        N_points = [self.N_training, self.N_validation]
+        for i, dataset in enumerate(datasets): self._compute_thermo_variables(dataset, N_points[i])
 
-        # Temperature range (T > 0.9 * T_crit)
-        T_min = 0.9 * T_crit
-        T_vals = np.linspace(T_min, T_crit, 200)[::-1]
+    # -----------------------------------------------------#
+    # Training models
+    # -----------------------------------------------------#
 
-        # Compute saturated liquid (Q=0) and vapor (Q=1) entropies
-        s_liq = np.array([CP.PropsSI('S', 'T', T, 'Q', 0, self.IN['fluid']) for T in T_vals])
-        s_vap = np.array([CP.PropsSI('S', 'T', T, 'Q', 1, self.IN['fluid']) for T in T_vals])
+    def train_models(self):
 
-        # Pressure
-        P_liq = np.array([CP.PropsSI('P', 'T', T, 'Q', 0, self.IN['fluid']) for T in T_vals])
-        P_vap = np.array([CP.PropsSI('P', 'T', T, 'Q', 0, self.IN['fluid']) for T in T_vals])
-
-        # Saturation
-        s_sat = np.array([np.concatenate((s_liq[::-1], s_vap))])
-        T_sat = np.array([np.concatenate((T_vals[::-1], T_vals))])
-        P_sat = np.array([np.concatenate((P_liq[::-1], P_vap))])
-
-        self.dataset['s_sat'] = s_sat
-        self.dataset['T_sat'] = T_sat
-        self.dataset['P_sat'] = P_sat
-
-    def set_isobars_inlet(self):
-
-        self.n_isobars = 5
-        self.n_entropy = 200
-        P_linspace = np.linspace(np.amin(self.dataset_training['P01']),
-                                 np.amax(self.dataset_training['P01']), self.n_isobars)
-        s_linspace = np.linspace(min(np.amin(self.dataset['s_sat']),np.amin(self.dataset_training['s01'])),
-                                 max(np.amax(self.dataset['s_sat']),np.amax(self.dataset_training['s01'])), self.n_entropy)
-
-        P_array, T_array, s_array = [], [], []
-        for i in range(self.n_isobars):
-            P_array.append(P_linspace[i] * np.ones_like(s_linspace))
-            s_array.append(s_linspace)
-            T_array.append([CP.PropsSI('T', 'P', P_linspace[i], 'SMASS', s, self.IN['fluid']) for s in s_linspace])
-
-        self.dataset['s_isobars'] = np.array(s_array)
-        self.dataset['T_isobars'] = np.array(T_array)
-        self.dataset['P_isobars'] = np.array(P_array)
+        # Input variables
+        X_training      = np.array([self.dataset_training[key_var_independent][0] for key_var_independent in self.keys_var_independent]).transpose()
+        X_validation    = np.array([self.dataset_validation[key_var_independent][0] for key_var_independent in self.keys_var_independent]).transpose()
+        surrogate_models = []
+        # Looping output variables
+        for key_var_dependent in self.keys_var_dependent:
+            Y_training      = self.dataset_training[key_var_dependent].transpose()
+            Y_validation    = self.dataset_validation[key_var_dependent].transpose()
+            Y_surrogate_models = []
+            # Looping metamodels
+            for model_type in self.IN['surrogate_models']:
+                model = SurrogateFactory.create(model_type, self.IN)
+                model.train(X_training, Y_training)
+                Y_surrogate_models.append(model)
+            surrogate_models.append(Y_surrogate_models)
 
     # -----------------------------------------------------#
     # Plotting
@@ -119,8 +99,14 @@ class Driver():
     def plot_training_and_validation_contours(self):
 
         # Plotting datasets
-        self._plot_training_and_validation_contours('P01', 'T01','P_sat','T_sat','P_isobars','T_isobars')
-        self._plot_training_and_validation_contours('s01', 'T01','s_sat','T_sat','s_isobars','T_isobars')
+
+        self._plot_training_and_validation_contours('P01', 'T01',
+                                                    'P_sat','T_sat',
+                                                    'P_isobars','T_isobars')
+
+        self._plot_training_and_validation_contours('s01', 'T01',
+                                                    's_sat','T_sat',
+                                                    's_isobars','T_isobars')
 
     def _plot_training_and_validation_contours(self, x_label, y_label, x_label_sat, y_label_sat, x_label_isobars, y_label_isobars):
 
@@ -133,6 +119,8 @@ class Driver():
         y_sat = self.dataset[y_label_sat].transpose()
         x_isobars = self.dataset[x_label_isobars].transpose()
         y_isobars = self.dataset[y_label_isobars].transpose()
+        eps_isobar_L = 0.50
+        eps_isobar_U = 0.20
 
         # X limits
         x_min = min(np.amin(x_training), np.amin(x_validation), np.amin(x_sat))
@@ -150,14 +138,21 @@ class Driver():
         for iz, z_label in enumerate(self.IN['var_dependent']):
             z_training = self.dataset_training[z_label].transpose()
             z_validation = self.dataset_validation[z_label].transpose()
-            title = f"Contour_{x_label}_{y_label}_{z_label}"
-            filename = title
+            title = f"Contour {x_label} {y_label} {z_label}"
+            filename = title.replace(" ","-")
             plot_SBO(x_label, y_label, title, x_lim=x_lim, y_lim=y_lim,
                      z_label=z_label, X_contour=x_training[:,0], Y_contour=y_training[:,0], Z_contour=z_training[:,0],
                      X0=x_training, Y0=y_training, x0y0_kind="training", labels_list_x0=["training"],
                      X1=x_validation, Y1=y_validation, x1y1_kind="validation", labels_list_x1=["validation"],
                      X2=x_sat, Y2=y_sat, x2y2_kind="xy", labels_list_x2=["saturation"],
                      X3=x_isobars, Y3=y_isobars, x3y3_kind="dotted", labels_list_x3=["p=cte"]+(self.n_isobars-1)*[""],
+                     X4=[x_isobars[int(eps_isobar_L*self.n_entropy),0], x_isobars[int(eps_isobar_U*self.n_entropy),-1]],
+                     Y4=[y_isobars[int(eps_isobar_L*self.n_entropy),0], y_isobars[int(eps_isobar_U*self.n_entropy),-1]],
+                     x4y4_kind="annotate",
+                     labels_list_x4=[f"{'%0.1f' % (self.dataset['P_isobars'][0,0]/10**6)} MPa",
+                                     f"{'%0.1f' % (self.dataset['P_isobars'][-1,-1]/10**6)} MPa"],
+                     ha_4=['center','right'],
+                     va_4=['center','bottom'],
                      output_directory=self.directories.outputs_directory, loc='upper left',
                      filename=filename)
 
