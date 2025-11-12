@@ -1,2 +1,5 @@
-./test_cases
-/test_cases
+# Ignore all files inside any Outputs/ folder (recursively)
+**/Outputs/*
+
+# But keep the folder itself (so Git tracks the empty folder)
+!**/Outputs/.gitkeep

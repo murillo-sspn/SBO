@@ -29,7 +29,7 @@ import os
 sys.path.append(os.environ["SBO_HOME"])
 from common.config import *
 from common.logger import *
-from src.driver import *
+from common.utils import *
 
 class SBO():
     def __init__(self):
@@ -57,7 +57,9 @@ class SBO():
         # Run
         # -----------------------------------------------------#
 
-        driver = Driver(self.IN, self.directories)
+        if self.IN['problem'] == 'multistage_compressor':
+            from src.driver_multistage import Driver
+            driver = Driver(self.IN, self.directories)
 
         # -----------------------------------------------------#
         # Finalization
