@@ -116,11 +116,14 @@ class Driver(Thermo):
         y_45 = np.array([np.linspace(min(np.amin(y_validation),np.amin(y_predicted)),
                                      max(np.amax(y_validation), np.amax(y_predicted)),
                                      2)]).transpose()
+        x_lim = [np.amin(y_validation),np.amax(y_validation)]
+        dx, eps = x_lim[1] - x_lim[0], 0.02
+        x_lim = [x_lim[0]-dx*eps, x_lim[1]+dx*eps]
 
-        plot_SBO(x_label, y_label, title,
+        plot_SBO(x_label, y_label, title, x_lim=x_lim,
                  X0=y_validation, Y0=y_predicted, x0y0_kind="points", labels_list_x0=["data"],
                  X1=y_45, Y1=y_45, x1y1_kind="dotted", labels_list_x1=["y=x"],
-                 flag_aspect_ratio=True,
+                 flag_aspect_ratio=False,
                  output_directory=self.directories.outputs_directory, loc='upper left',
                  filename=filename)
 

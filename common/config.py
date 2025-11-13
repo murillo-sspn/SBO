@@ -18,6 +18,7 @@
 # Importing general packages
 #-----------------------------------------------------#
 import re
+import numpy as np
 
 def strip_list(lst):
 
@@ -101,6 +102,40 @@ def parse_value(value):
         if value == '':
             value = []
 
+    # Parse lists of lists
+    if isinstance(value, list):
+        if isinstance(value[0], str):
+            if '[[' in value[0] and ']]' in value[-1]:
+                # Parsing arguments
+                j = 0
+                value_ = [[value[0].replace('[[','')]]
+                for i, elem in enumerate(value[1:-1]):
+                    if isinstance(elem, int) or isinstance(elem, float):
+                        value_[j].append(elem)
+                    elif isinstance(elem, str):
+                        if ']' in elem:
+                            value_[j].append(elem.replace(']',''))
+                        elif '[' in elem:
+                            j += 1
+                            value_.append([elem.replace('[', '')])
+                        else:
+                            value_[j].append(elem)
+                value_[j].append(value[-1].replace(']]',''))
+
+                # Convert to floats and integers if possible
+                for i, line in enumerate(value_):
+                    for j, elem in enumerate(line):
+                        if isinstance(elem, str):
+                            if elem.isdigit():
+                                f = float(elem)
+                                if np.abs(f % 1) < 1e-8:
+                                    value_[i][j] = int(f)
+                                else:
+                                    value_[i][j] = f
+
+                # Update value
+                value = value_
+
     return value
 
 def read_user_input(file):
@@ -138,7 +173,6 @@ def read_user_input(file):
             line = line.split("=", 1)
             key = line[0].strip()
             value = line[1].strip()
-
             IN[key] = parse_value(value)
 
     return IN
