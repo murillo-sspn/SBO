@@ -201,7 +201,6 @@ class Plotting():
             try:
                 n_pts, n_curves = np.shape(Xi)
             except:
-                breakpoint()
                 n_pts, = np.shape(Xi)
                 n_curves = 1
 
@@ -272,6 +271,55 @@ class Plotting():
                 if label != "":                 _kwargs["label"] = label
                 if self.flag_multiple_colors:   _kwargs["color"] = colors_i[i]
                 self._plot_setup(points, **_kwargs)
+
+    def _export_data(self):
+
+        txt = ""
+        txt += "\n-----------------------------------------------------\n"
+        for i in range(self.N_plots_max):
+            txt += f"i = {i}\n"
+            txt += self._get_txt_data_XiYi(self.X[i], self.Y[i], self.labels_list[i])
+            txt += "\n-----------------------------------------------------\n"
+        txt += "Contour\n"
+        txt += self._get_txt_data_XYZcontour()
+        txt += "\n-----------------------------------------------------\n"
+        filepath = os.path.join(self.output_directory, f"{self.filename}.dat")
+        with open(filepath,'w') as f: f.write(txt)
+
+    def _get_txt_data_XiYi(self, Xi, Yi, labels_list_xi):
+
+        txt = ""
+
+        if (isinstance(Xi, np.ndarray)) and (isinstance(Yi, np.ndarray)):
+
+            try:
+                n_pts, n_curves = np.shape(Xi)
+            except:
+                n_pts, = np.shape(Xi)
+                n_curves = 1
+
+            for i in range(n_curves):
+                txt += f"{labels_list_xi[i]}\n"
+                txt += f"{self.x_label}, {self.y_label}\n"
+                # Get x, y components of evaluated points
+                x, y = Xi[:, i], Yi[:, i]
+                for j in range(n_pts):
+                    txt += f"{'%.8f'%x[j]}, {'%.8f'%y[j]}\n"
+                txt += "\n"
+
+        return txt
+
+    def _get_txt_data_XYZcontour(self):
+
+        txt = ""
+        if (isinstance(self.X_contour, np.ndarray)):
+            n_pts, = np.shape(self.X_contour)
+            txt += f"{self.x_label}, {self.y_label}, {self.z_label}\n"
+            for i in range(n_pts):
+                x, y, z = self.X_contour[i], self.Y_contour[i], self.Z_contour[i]
+                txt += f"{'%.8f'%x}, {'%.8f'%y}, {'%.8f'%z}\n"
+            txt += "\n"
+        return txt
 
 
     # -----------------------------------------------------#
@@ -420,7 +468,11 @@ class Plotting():
     def _save_chart(self, fig, extensions, filename, output_directory):
         for ext in extensions:
             filename_with_extension = f"{filename}.{ext}"
-            fig.savefig(os.path.join(output_directory, filename_with_extension))
+            filepath = os.path.join(output_directory, filename_with_extension)
+            filedir = os.path.dirname(filepath)
+            if not(os.path.exists(filedir)): os.mkdir(filedir)
+            fig.savefig(filepath)
+        self._export_data()
 
     def _show_chart(self, flag_show):
         if flag_show: plt.show()
