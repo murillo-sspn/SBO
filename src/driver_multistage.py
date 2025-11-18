@@ -33,7 +33,7 @@ from src.thermo import Thermo
 class Driver(Thermo):
 
     def __init__(self, IN, directories):
-        super().__init__()#
+        super().__init__()
         # Arguments
         self.IN = IN
         self.directories = directories
