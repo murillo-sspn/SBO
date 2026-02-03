@@ -27,7 +27,7 @@ from abc import ABC, abstractmethod
 from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import MLPRegressor
 from sklearn.model_selection import GridSearchCV
-from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error, max_error
 #   smt: https://doi.org/10.1016/j.advengsoft.2019.03.005
 from smt.surrogate_models import KRG, RBF
 #   gstools: https://doi.org/10.5194/gmd-15-3161-2022
@@ -102,14 +102,17 @@ class SurrogateModel(ABC, Scaling):
         pass
 
     def validate(self, y, y_pred):
-        rmse = mean_squared_error(y, y_pred)
         r2 = r2_score(y, y_pred)
-        mae = mean_absolute_error(y, y_pred)
+        mae = max_error(y, y_pred)
+        rmse = mean_squared_error(y, y_pred)
+        meae = mean_absolute_error(y, y_pred)
+
 
         return {
             "R2":r2,
+            "MAE": mae,
             "RMSE": rmse,
-            "MAE": mae
+            "MEAE": meae,
         }
 
 # -------------------------------
@@ -218,12 +221,12 @@ class NNModel(SurrogateModel):
 
 
         param_grid = {
-            'hidden_layer_sizes': self.cfg.get("nn_param_grid_hidden_layers"),
-            'activation': self.cfg.get("nn_param_grid_activation"),
-            'alpha': self.cfg.get("nn_param_grid_alpha"),
-            'learning_rate_init': self.cfg.get("nn_param_grid_learning_rate_init"),
-            'tol': self.cfg.get("nn_param_grid_tol"),
-            'max_iter': self.cfg.get("nn_param_grid_max_iter")
+            'hidden_layer_sizes':   self.cfg.get("nn_param_grid_hidden_layers"),
+            'activation':           self.cfg.get("nn_param_grid_activation"),
+            'alpha':                self.cfg.get("nn_param_grid_alpha"),
+            'learning_rate_init':   self.cfg.get("nn_param_grid_learning_rate_init"),
+            'tol':                  self.cfg.get("nn_param_grid_tol"),
+            'max_iter':             self.cfg.get("nn_param_grid_max_iter")
         }
 
         grid = GridSearchCV(
@@ -236,8 +239,8 @@ class NNModel(SurrogateModel):
 
         grid.fit(X, y)
 
-        print("Best parameters:", grid.best_params_)
-        print("Best score:", -grid.best_score_)
+        log_print("Best parameters:", grid.best_params_)
+        log_print("Best score:", -grid.best_score_)
 
     def optimize_hyperparameters(self, X_train, y_train, X_validation, y_validation,
                                  parameters={}):

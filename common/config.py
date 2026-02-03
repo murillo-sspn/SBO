@@ -102,6 +102,10 @@ def parse_value(value):
         if value == '':
             value = []
 
+    # Convert single strings to lists
+    if isinstance(value, str):
+        value = [value]
+
     # Parse lists of lists
     if isinstance(value, list):
         if isinstance(value[0], str):

@@ -60,6 +60,9 @@ class Plotting():
                  X4=None, Y4=None, labels_list_x4=None, colors_4=None, x4y4_kind="pareto",  ha_4=None, va_4=None,
                  X5=None, Y5=None, labels_list_x5=None, colors_5=None, x5y5_kind="history", ha_5=None, va_5=None,
                  X6=None, Y6=None, labels_list_x6=None, colors_6=None, x6y6_kind="opt",     ha_6=None, va_6=None,
+                 X7=None, Y7=None, labels_list_x7=None, colors_7=None, x7y7_kind="opt",     ha_7=None, va_7=None,
+                 X8=None, Y8=None, labels_list_x8=None, colors_8=None, x8y8_kind="opt",     ha_8=None, va_8=None,
+                 X9=None, Y9=None, labels_list_x9=None, colors_9=None, x9y9_kind="opt",     ha_9=None, va_9=None,
                  flag_ranges=False, index_ranges=0, X_L=None, X_U=None, Y_L=None, Y_U=None,
                  flag_rotate_second_and_penultimate_ranges=False,
                  flag_multiple_colors=False,
@@ -74,17 +77,20 @@ class Plotting():
         self.levels_contour, self.cmap = levels_contour, cmap
 
         # Summary lists
-        self.X              = [X0, X1, X2, X3, X4, X5, X6]
-        self.Y              = [Y0, Y1, Y2, Y3, Y4, Y5, Y6]
+        self.X              = [X0, X1, X2, X3, X4, X5, X6, X7, X8, X9]
+        self.Y              = [Y0, Y1, Y2, Y3, Y4, Y5, Y6, Y7, Y8, Y9]
         self.labels_list    = [labels_list_x0, labels_list_x1, labels_list_x2,
                                labels_list_x3, labels_list_x4, labels_list_x5,
-                               labels_list_x6]
+                               labels_list_x6, labels_list_x7, labels_list_x8,
+                               labels_list_x9]
         self.colors         = [colors_0, colors_1, colors_2, colors_3,
-                               colors_4, colors_5, colors_6]
+                               colors_4, colors_5, colors_6, colors_7,
+                               colors_8, colors_9]
         self.xy_kind        = [x0y0_kind, x1y1_kind, x2y2_kind, x3y3_kind,
-                               x4y4_kind, x5y5_kind, x6y6_kind]
-        self.ha             = [ha_0, ha_1, ha_2, ha_3, ha_4, ha_5, ha_6]
-        self.va             = [va_0, va_1, va_2, va_3, va_4, va_5, va_6]
+                               x4y4_kind, x5y5_kind, x6y6_kind, x7y7_kind,
+                               x8y8_kind, x9y9_kind]
+        self.ha             = [ha_0, ha_1, ha_2, ha_3, ha_4, ha_5, ha_6, ha_7, ha_8, ha_9]
+        self.va             = [va_0, va_1, va_2, va_3, va_4, va_5, va_6, va_7, va_8, va_9]
         # Maximum number of plots
         self.N_plots_max    = len(self.X)
         # Initializing flag
@@ -93,8 +99,8 @@ class Plotting():
         # Annotations
         for i in range(self.N_plots_max):
             if not(isinstance(self.ha[i], np.ndarray) or isinstance(self.ha[i], list)):
-                self.ha[i] = ['center', 'center', 'center', 'center']
-                self.va[i] = ['center', 'center', 'center', 'center']
+                self.ha[i] = ['center'] * 10
+                self.va[i] = ['center'] * 10
 
         self.flag_ranges, self.index_ranges, self.X_L, self.X_U, self.Y_L, self.Y_U = flag_ranges, index_ranges, X_L, X_U, Y_L, Y_U
         self.flag_ranges_list = [(self.flag_ranges and i == self.index_ranges) for i in range(self.N_plots_max)]
@@ -182,7 +188,7 @@ class Plotting():
         self._set_axis_attribute(self.fig, self.ax, self.x_label, self.y_label, self.title, self.x_lim, self.y_lim,
                             self.flag_aspect_ratio)
 
-        if self.flag_labels_exist:  self.ax.legend(loc=self.loc)
+        if self.flag_labels_exist:  self.ax.legend(loc=self.loc, fontsize=10)
 
         self._save_chart(self.fig, self.extensions, self.filename, self.output_directory)
 
@@ -211,16 +217,20 @@ class Plotting():
                 self.flag_labels_exist = not (((np.array(labels_list_xi)) == "").all())
 
             # Colors
-            if colors_i == None and self.flag_multiple_colors:
-                cmap = cm.get_cmap(colormap_cmap, n_curves)  # sample N discrete colors from viridis
-                colors_i = [cmap(i) for i in range(n_curves)]
+            if colors_i == None:
+                flag_colors_provided = False
+                if self.flag_multiple_colors:
+                    cmap = cm.get_cmap(colormap_cmap, n_curves)  # sample N discrete colors from viridis
+                    colors_i = [cmap(i) for i in range(n_curves)]
 
-                if self.flag_colorbar and "history" in xiyi_kind:
-                    norm = mcolors.Normalize(vmin=1, vmax=n_curves)
-                    cbar = plt.colorbar(cm.ScalarMappable(norm=norm, cmap=cmap), ax=self.ax)
-                    cbar.set_label('Iter')
-                    cbar.set_ticks(np.linspace(1, n_curves, 2))
-                    cbar.set_ticklabels([f"{int(t)}" for t in np.linspace(1, n_curves, 2)])
+                    if self.flag_colorbar and "history" in xiyi_kind:
+                        norm = mcolors.Normalize(vmin=1, vmax=n_curves)
+                        cbar = plt.colorbar(cm.ScalarMappable(norm=norm, cmap=cmap), ax=self.ax)
+                        cbar.set_label('Iter')
+                        cbar.set_ticks(np.linspace(1, n_curves, 2))
+                        cbar.set_ticklabels([f"{int(t)}" for t in np.linspace(1, n_curves, 2)])
+            else:
+                flag_colors_provided = True
 
             # Set rotation angles array if ranges are plotted
             if flag_ranges_i:
@@ -268,9 +278,24 @@ class Plotting():
                 else:
                     _kwargs = {"kind": xiyi_kind}
                 label = labels_list_xi[i]
-                if label != "":                 _kwargs["label"] = label
-                if self.flag_multiple_colors:   _kwargs["color"] = colors_i[i]
+                if label != "":
+                    _kwargs["label"] = label
+                if self.flag_multiple_colors or flag_colors_provided:
+                    _kwargs["color"] = colors_i[i]
                 self._plot_setup(points, **_kwargs)
+                if "arrow" in xiyi_kind:
+                    # Arrow at the last point of the plot
+                    self.ax.annotate(
+                        "",
+                        xy=(x[-1], y[-1]),
+                        xytext=(x[-2], y[-2]),
+                        arrowprops=dict(
+                            arrowstyle="->",
+                            color=colors_i[i],
+                            linewidth=3
+                        )
+                    )
+
 
     def _export_data(self):
 
@@ -450,6 +475,17 @@ class Plotting():
             points.set_linestyle("")
             self._set_func(points.set_color, color, "k")
             points.set_linewidth(2)
+            points.set_label(label)
+
+        elif "arrow" in kind:
+            points.set_marker("")
+            points.set_markersize(5)
+            points.set_markeredgewidth(1)
+            points.set_markeredgecolor("k")
+            points.set_markerfacecolor("w")
+            points.set_linestyle("-")
+            points.set_color(color)
+            points.set_linewidth(3)
             points.set_label(label)
 
     def _set_func(self, func, input, default):

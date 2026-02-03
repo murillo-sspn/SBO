@@ -57,7 +57,7 @@ class SBO():
         # Run
         # -----------------------------------------------------#
 
-        if self.IN['problem'] == 'multistage_compressor':
+        if self.IN['problem'][0] == 'multistage_compressor':
             from src.driver_multistage import Driver
             driver = Driver(self.IN, self.directories)
 
