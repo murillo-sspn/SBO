@@ -1,5 +1,2 @@
-# Ignore all files inside any Outputs/ folder (recursively)
-**/Outputs/*
-
-# But keep the folder itself (so Git tracks the empty folder)
-!**/Outputs/.gitkeep
+*.ods
+*.xlsx

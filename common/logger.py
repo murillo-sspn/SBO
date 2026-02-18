@@ -85,16 +85,3 @@ def close_logger(final_message="Logger finished."):
     """Convenience wrapper to finalize and save     ."""
     save_log()
     print(final_message)
-
-# -----------------------------------------------------#
-# Logger
-# -----------------------------------------------------#
-
-def print_banner():
-    log_print("#######################################################")
-    log_print("#                                                     #")
-    log_print("#           Surrogate Based Optimization              #")
-    log_print("#     framework for multistage compressor design      #")
-    log_print("#                                                     #")
-    log_print("#######################################################")
-    log_print('')

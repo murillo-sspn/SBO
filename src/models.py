@@ -202,7 +202,9 @@ class NNModel(SurrogateModel):
 
 
 
-    def train(self, X, y):
+    def train(self, X, y, verbose=False):
+
+        if verbose: log_print(f"Training neural network with provided data")
         # Train on scaled model
         X_train, y_train = self._scale_Xy(X, y)
         if self.cfg.get("nn_param_grid_flag", False): self.grid_search(X_train, y_train)
@@ -247,6 +249,8 @@ class NNModel(SurrogateModel):
 
         if self.nn_opt_hyperparameters:
 
+            log_print(f"Optimizing hyperparameters of neural network")
+
             if len(parameters.keys()) == 0:
                 parameters = {
                     "n_neurons_min"  : self.cfg.get("nn_opt_n_neurons_min", 5)[0],
@@ -256,8 +260,6 @@ class NNModel(SurrogateModel):
                     "prob_cross"     : self.cfg.get("nn_opt_prob_cross", 0.8)[0],
                     "prob_mut"       : self.cfg.get("nn_opt_prob_mut", 0.8)[0],
                 }
-
-            log_print(f"Optimizing hyperparameters of neural network")
 
             # Get parameters
             n_neurons_max   = parameters["n_neurons_max"]
@@ -269,7 +271,10 @@ class NNModel(SurrogateModel):
 
             # Fixed number of layers
             n_neurons_baseline = np.array([layer for layer in self.hidden_layers])
-            n_neurons_min = n_neurons_min * np.ones_like(n_neurons_baseline)
+            try:
+                n_neurons_min = n_neurons_min * np.ones_like(n_neurons_baseline)
+            except:
+                breakpoint()
             n_neurons_max = n_neurons_max * np.ones_like(n_neurons_baseline)
 
             # History
@@ -371,7 +376,7 @@ class NNModel(SurrogateModel):
             elif dimX == 2: n_neurons_opt = (result.X)[0].astype(int).tolist()
             error_opt = func(n_neurons_opt)
 
-            log_print("\n===== OPTIMIZATION RESULT =====")
+            log_print("===== OPTIMIZATION RESULT =====")
             log_print(f"Best X: {n_neurons_opt}")
             log_print(f"Best objective: {error_opt}")
 

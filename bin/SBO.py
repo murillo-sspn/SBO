@@ -47,9 +47,6 @@ class SBO():
         # Initialize logger
         init_logger(log_dir=self.directories.outputs_directory)
 
-        # Print Banner
-        print_banner()
-
         # Read inputs file
         self.IN = read_user_input(self.INFile)
 
@@ -60,6 +57,10 @@ class SBO():
         if self.IN['problem'][0] == 'multistage_compressor':
             from src.driver_multistage import Driver
             driver = Driver(self.IN, self.directories)
+        elif self.IN['problem'][0] == 'parametric_design_compressor_stage':
+            from src.driver_parametric_compressor_stage import Driver
+            driver = Driver(self.IN, self.directories)
+
 
         # -----------------------------------------------------#
         # Finalization

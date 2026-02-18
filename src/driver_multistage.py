@@ -32,9 +32,19 @@ from src.models import *
 from src.thermo import Thermo
 from src.opt import Optimization
 
+def print_banner():
+    log_print("#######################################################")
+    log_print("#                                                     #")
+    log_print("#           Surrogate Based Optimization              #")
+    log_print("#     framework for multistage compressor design      #")
+    log_print("#                                                     #")
+    log_print("#######################################################")
+    log_print('')
+
 class Driver(Thermo, Optimization):
 
     def __init__(self, IN, directories):
+        print_banner()
         super().__init__()
         # Arguments
         self.IN = IN
@@ -162,17 +172,19 @@ class Driver(Thermo, Optimization):
         self.best_surrogate_models   = []
         # Looping output variables
         for index_var_dep, key_var_dependent in enumerate(self.keys_var_dependent):
+            log_print(f"Output variable: {key_var_dependent}")
             y_training      = self.dataset_training[key_var_dependent].transpose()
             y_validation    = self.dataset_validation[key_var_dependent].transpose()
             y_surrogate_models = []
             # Looping metamodels
             for model_type in self.IN['surrogate_models']:
+                log_print(f"Model: {model_type}")
                 # Create and train metamodel
                 model = SurrogateFactory.create(model_type, self.IN, index_var_dep)
                 # Optimize hyperparameters to minimize R² w.r.t. validation
                 model.optimize_hyperparameters(X_training, y_training, X_validation, y_validation)
                 # Train model
-                model.train(X_training, y_training)
+                model.train(X_training, y_training, verbose=True)
                 # Get model results
                 y_predicted_training = np.array([model.predict(X_training)]).transpose()
                 y_predicted_validation = np.array([model.predict(X_validation)]).transpose()
@@ -199,7 +211,7 @@ class Driver(Thermo, Optimization):
                 y_surrogate_models_r2.append(y_surrogate_models[i]["validation"]["R2"])
             best_model = y_surrogate_models[int(np.argmax(y_surrogate_models_r2))]['model']
             self.best_surrogate_models.append(best_model)
-            log_print(f"    Selecting {best_model.name}")
+            log_print(f"    Selecting {best_model.name}\n")
 
     def _get_X_from_dataset(self, dataset):
         return np.array([dataset[key_var_independent][0] for key_var_independent in

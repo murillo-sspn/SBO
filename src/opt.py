@@ -124,10 +124,16 @@ class Optimization():
                     worst_g = 0.0
                 g_status = "" if worst_g > 0 else " (ok)"
 
+                EPS = 1e-4
+                active_constraints = []
+                for i, x in enumerate(best_X):
+                    active_constraints.append(x - X_min[i] < EPS
+                                              or X_max[i] - x < EPS)
+
                 log_print(
                     f"Gen {algorithm.n_gen}: "
                     f"f_best = {best_F:.4e}, "
-                    f"X_best = [" + ", ".join(f"{x:.1f}" for x in best_X) + "], "
+                    f"X_best = [" + ", ".join(f"{x:.4f}{' (x)' if active_constraints[i] else ''}" for i, x in enumerate(best_X)) + "], "
                     f"worst_g = {worst_g:.2e}{g_status}"
                 )
 
