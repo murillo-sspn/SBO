@@ -169,14 +169,20 @@ def read_user_input(file):
             # Remove line returns
             line = line.strip('\r\n')
 
-            # Keep only lines with useful data
-            if ("=" not in line) or (line[0] in ['%', '#']):
-                continue
+            if len(line)>0:
 
-            # split line across equals sign
-            line = line.split("=", 1)
-            key = line[0].strip()
-            value = line[1].strip()
-            IN[key] = parse_value(value)
+                if line[0] in ['[']:
+                    section = line[1:-1]
+                    IN[section]={}
+                else:
+                    # Keep only lines with useful data
+                    if ("=" not in line) or (line[0] in ['%', '#']):
+                        continue
+
+                    # split line across equals sign
+                    line = line.split("=", 1)
+                    key = line[0].strip()
+                    value = line[1].strip()
+                    IN[section][key] = parse_value(value)
 
     return IN

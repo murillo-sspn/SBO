@@ -138,16 +138,16 @@ class Optimization():
                 )
 
         # Population size
-        pop_size = IN.get("opt_nsga2_pop_size")[0]
+        pop_size = IN['nsga2']["opt_nsga2_pop_size"][0]
         # Number of generations
-        n_gen = IN.get("opt_nsga2_n_gen")[0]
+        n_gen = IN['nsga2']["opt_nsga2_n_gen"][0]
         stop_criteria = ('n_gen', n_gen)
         # LatinHypercubeSampling:       pymoo\operators\sampling\lhs.py
         sampling = LHS()
         # SimulatedBinaryCrossover:     pymoo\operators\crossover\sbx.py
-        crossover = SBX(prob=IN.get("opt_nsga2_prob_cross")[0])
+        crossover = SBX(prob=IN['nsga2']["opt_nsga2_prob_cross"][0])
         # PolynomialMutation:           pymoo\operators\mutation\pm.py
-        mutation = PolynomialMutation(prob=IN.get("opt_nsga2_prob_mut")[0])
+        mutation = PolynomialMutation(prob=IN['nsga2']["opt_nsga2_prob_mut"][0])
         # Genetic algorithm
         algorithm = NSGA2(pop_size=pop_size,
                           sampling=sampling,

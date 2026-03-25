@@ -53,12 +53,14 @@ class SBO():
         # -----------------------------------------------------#
         # Run
         # -----------------------------------------------------#
-
-        if self.IN['problem'][0] == 'multistage_compressor':
+        if self.IN['general_info']['problem'][0] == 'multistage_compressor':
             from src.driver_multistage import Driver
             driver = Driver(self.IN, self.directories)
-        elif self.IN['problem'][0] == 'parametric_design_compressor_stage':
-            from src.driver_parametric_compressor_stage import Driver
+        elif self.IN['general_info']['problem'][0] == 'SBO':
+            from src.driver_SBO import Driver
+            driver = Driver(self.IN, self.directories)
+        elif self.IN['general_info']['problem'][0] == 'SBO_with_classification':
+            from src.driver_SBO_with_classification import Driver
             driver = Driver(self.IN, self.directories)
 
 
