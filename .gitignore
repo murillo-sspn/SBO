@@ -6,3 +6,4 @@ __pycache__
 *.wbpj
 *_files
 run_powershell.txt
+.idea
