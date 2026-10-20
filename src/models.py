@@ -55,6 +55,13 @@ from common.logger import log_print
 # Common functions
 # -------------------------------
 
+def _get_item(value, index):
+    # Config values may be parsed either as scalars or as per-output lists
+    return value[index] if isinstance(value, list) else value
+
+def _to_bool(value):
+    return value if isinstance(value, bool) else str(value).strip().lower() in ("true", "yes", "1")
+
 class Scaling():
 
     def _init_scaler_Xy(self):
@@ -94,6 +101,21 @@ class SurrogateModel(ABC, Scaling):
         self.cfg = cfg
         self.verbose = verbose
         self.continuous = True
+
+    def init_model(self, index=0):
+        # Models without configurable hyperparameters (e.g. kriging, rbf)
+        pass
+
+    def get_hyperparameters(self):
+        # Hyperparameters exported to models.cfg (online SBO)
+        return {}
+
+    def set_hyperparameters(self, hyperparameters):
+        # Hyperparameters imported from models.cfg (online SBO)
+        pass
+
+    def optimize_hyperparameters(self, X_train, y_train, X_validation, y_validation, parameters={}):
+        pass
 
     def validate(self, y, y_pred):
         r2 = r2_score(y, y_pred)
@@ -159,7 +181,7 @@ class NNModel(SurrogateModel):
         super().__init__(cfg)
 
     def init_model(self, index_var_dep=0):
-        self.nn_opt_hyperparameters     = (self.cfg['neural_networks']["nn_opt_hyperparameters"][index_var_dep] == "True")
+        self.nn_opt_hyperparameters     = _to_bool(_get_item(self.cfg['neural_networks']["nn_opt_hyperparameters"], index_var_dep))
         self.hidden_layers              = self.cfg['neural_networks']["nn_hidden_layers"][index_var_dep]
         self.n_hidden_layers            = len(self.hidden_layers)
         self.activation                 = self.cfg['neural_networks']["nn_activation"][index_var_dep]
@@ -168,7 +190,9 @@ class NNModel(SurrogateModel):
         self.tol                        = self.cfg['neural_networks']["nn_tol"][index_var_dep]
         self.random_state               = int(self.cfg['neural_networks']["nn_random_seed"][index_var_dep])
         self.learning_rate_init         = self.cfg['neural_networks']["nn_learning_rate_init"][index_var_dep]
-        self.scale_Xy                   = self.cfg['neural_networks']["scale_Xy"]
+        self.scale_Xy                   = _to_bool(_get_item(self.cfg['neural_networks']["scale_Xy"], index_var_dep))
+        # Objective of the hyperparameter optimization with an external score: r2 | max_error | p95_error
+        self.nn_opt_metric              = _get_item(self.cfg['neural_networks'].get("nn_opt_metric", "r2"), 0)
         self._init_scaler_Xy()
         self._update_model()
 
@@ -192,6 +216,32 @@ class NNModel(SurrogateModel):
                                   learning_rate_init=self.learning_rate_init,
                                   verbose=self.verbose)
 
+    def get_hyperparameters(self):
+        return {
+            "nn_hidden_layers": [int(n) for n in np.atleast_1d(self.hidden_layers)],
+            "nn_activation": self.activation,
+            "nn_solver": self.solver,
+            "nn_max_iter": int(self.max_iter),
+            "nn_tol": float(self.tol),
+            "nn_random_seed": int(self.random_state),
+            "nn_learning_rate_init": float(self.learning_rate_init),
+            "scale_Xy": bool(self.scale_Xy),
+        }
+
+    def set_hyperparameters(self, hyperparameters):
+        hp = hyperparameters
+        self.hidden_layers      = [int(n) for n in np.atleast_1d(hp["nn_hidden_layers"])]
+        self.n_hidden_layers    = len(self.hidden_layers)
+        self.activation         = _get_item(hp["nn_activation"], 0)
+        self.solver             = _get_item(hp["nn_solver"], 0)
+        self.max_iter           = int(_get_item(hp["nn_max_iter"], 0))
+        self.tol                = float(_get_item(hp["nn_tol"], 0))
+        self.random_state       = int(_get_item(hp["nn_random_seed"], 0))
+        self.learning_rate_init = float(_get_item(hp["nn_learning_rate_init"], 0))
+        self.scale_Xy           = _to_bool(_get_item(hp["scale_Xy"], 0))
+        self._init_scaler_Xy()
+        self._update_model()
+
     # -------------------------------
     # Scaling
     # -------------------------------
@@ -213,7 +263,11 @@ class NNModel(SurrogateModel):
         return y
 
     def optimize_hyperparameters(self, X_train, y_train, X_validation, y_validation,
-                                 parameters={}):
+                                 parameters={}, func_score=None, r2_target=None):
+
+        # func_score(hidden_layers, activation) -> R2: optional external score (e.g. cross-validation).
+        # Default: R2 of the validation data
+        # r2_target: the optimization stops as soon as a combination reaches R2 >= r2_target
 
         if self.nn_opt_hyperparameters:
 
@@ -246,6 +300,8 @@ class NNModel(SurrogateModel):
             errors = []
             n_neurons_layers = []
             activation_func = []
+            self.target_found = None
+            nn_model = self
 
             def _optimize_hyperparameters(X_train, y_train, X_validation, y_validation,
                                           n_layers, activation):
@@ -259,6 +315,25 @@ class NNModel(SurrogateModel):
                 self.func_eval = 0
 
                 def func(n_neurons):
+                    if self.target_found is not None:
+                        return 1e9  # R2 target already reached: skip remaining evaluations
+                    if func_score is not None:
+                        metrics = func_score([int(n) for n in n_neurons], activation)
+                        # Objective: |R2 - 1| or maximum absolute error
+                        if self.nn_opt_metric == "max_error":
+                            error = metrics["max_error"]
+                        elif self.nn_opt_metric == "p95_error":
+                            error = metrics["p95_error"]
+                        else:
+                            error = np.abs(metrics["R2"] - 1)
+                        history.append({"eval":self.func_eval, "n_neurons":[int(n) for n in n_neurons],
+                                        "R2":metrics["R2"], "max_error":metrics["max_error"],
+                                        "p95_error":metrics["p95_error"],
+                                        "RMSE":metrics["RMSE"], "error":error})
+                        self.func_eval += 1
+                        if r2_target is not None and metrics["R2"] >= r2_target and self.target_found is None:
+                            self.target_found = [int(n) for n in n_neurons]
+                        return error
                     # Set model
                     model = MLPRegressor(hidden_layer_sizes=n_neurons,
                                           activation=activation,
@@ -286,11 +361,13 @@ class NNModel(SurrogateModel):
                     # Get R2 error
                     error = np.abs(R2 - 1)
                     # Update history dict
-                    _dict = {"eval":self.func_eval, "R2":R2, "error":error}
+                    _dict = {"eval":self.func_eval, "n_neurons":[int(n) for n in n_neurons], "R2":R2, "error":error}
                     history.append(_dict)
                     #print(f"eval = {self.func_eval}\tR2 = {'%0.2f'%R2}")
                     # Update eval
                     self.func_eval += 1
+                    if r2_target is not None and R2 >= r2_target and self.target_found is None:
+                        self.target_found = [int(n) for n in n_neurons]
                     return error
 
                 class IntegerOptimizationProblem(ElementwiseProblem):
@@ -322,16 +399,28 @@ class NNModel(SurrogateModel):
                         X = algorithm.pop.get("X")  # decision variable vectors
 
                         i_best = F.argmin()  # best individual index
-                        best_F = float(F[i_best])  # scalar value
+                        best_F = float(np.ravel(F)[i_best])  # scalar value
                         best_X = X[i_best]  # vector
 
                         # Convert to integers
                         best_X_int = [int(x) for x in best_X]
 
-                        print(
+                        # Monitor R2, maximum error and RMSE of the best individual (external score)
+                        monitor = ""
+                        for _dict in history:
+                            if "max_error" in _dict and _dict["n_neurons"] == best_X_int:
+                                monitor = (f", R2 = {_dict['R2']:.4f}, max error = {_dict['max_error']:.4g}, "
+                                           f"P95 error = {_dict['p95_error']:.4g}, "
+                                           f"RMSE = {_dict['RMSE']:.4g}")
+
+                        log_print(
                             f"Gen {algorithm.n_gen}: f_best = {best_F:.6f}, "
-                            f"X_best = {best_X_int}"
+                            f"X_best = {best_X_int}{monitor}"
                         )
+
+                        # Stop as soon as a combination reaches the R2 target
+                        if nn_model.target_found is not None:
+                            algorithm.termination.force_termination = True
 
                 # Stopping criteria
                 stop_criteria = ('n_gen', n_gen)
@@ -349,14 +438,28 @@ class NNModel(SurrogateModel):
                 result = minimize(problem, algorithm,
                                   termination=stop_criteria, callback=PrintBestCallback(), use_threads=False)
                 # Get results
-                dimX = len(np.shape(result.X))
-                if dimX == 1:   n_neurons_opt = (result.X).astype(int).tolist()
-                elif dimX == 2: n_neurons_opt = (result.X)[0].astype(int).tolist()
-                error_opt = func(n_neurons_opt)
+                if self.target_found is not None:
+                    # Combination that reached the R2 target
+                    n_neurons_opt = self.target_found
+                    for _dict in history:
+                        if _dict["n_neurons"] == n_neurons_opt:
+                            result_dict = _dict
+                    error_opt = result_dict["error"]
+                    log_print(f"R2 target reached (R2 >= {r2_target})")
+                else:
+                    dimX = len(np.shape(result.X))
+                    if dimX == 1:   n_neurons_opt = (result.X).astype(int).tolist()
+                    elif dimX == 2: n_neurons_opt = (result.X)[0].astype(int).tolist()
+                    error_opt = func(n_neurons_opt)
+                    result_dict = history[-1]
 
                 log_print("===== OPTIMIZATION RESULT =====")
                 log_print(f"Best X: {n_neurons_opt}")
                 log_print(f"Best objective: {error_opt}")
+                if func_score is not None:
+                    log_print(f"R2 = {result_dict['R2']:.4f}, max error = {result_dict['max_error']:.4g}, "
+                              f"P95 error = {result_dict['p95_error']:.4g}, "
+                              f"RMSE = {result_dict['RMSE']:.4g}")
 
                 # Update model
                 return n_neurons_opt, error_opt
@@ -372,7 +475,15 @@ class NNModel(SurrogateModel):
                     errors.append(error_opt)
                     activation_func.append(activation)
                     log_print("")
-            _argmin = np.argmin(np.array(errors))
+                    if self.target_found is not None:
+                        break
+                if self.target_found is not None:
+                    break
+            if self.target_found is not None:
+                # Optimization complete: combination that reached the R2 target
+                _argmin = len(errors) - 1
+            else:
+                _argmin = np.argmin(np.array(errors))
             self.hidden_layers = n_neurons_layers[_argmin]
             self.activation = activation_func[_argmin]
             self._update_model()
@@ -391,7 +502,31 @@ class RFModel(SurrogateModel):
         self.continuous = False
 
     def init_model(self, index_var_dep=0):
-        self.model = RandomForestClassifier()
+        # [random_forest] section (optional): defaults of scikit-learn
+        rf = self.cfg.get('random_forest', {})
+        self.n_estimators       = int(_get_item(rf.get('rf_n_estimators', 100), 0))
+        self.min_samples_leaf   = int(_get_item(rf.get('rf_min_samples_leaf', 1), 0))
+        self.class_weight       = _get_item(rf.get('rf_class_weight', 'none'), 0)
+        self._update_model()
+
+    def _update_model(self):
+        # class_weight = balanced: weights inversely proportional to the class frequencies
+        class_weight = None if str(self.class_weight).lower() == 'none' else self.class_weight
+        self.model = RandomForestClassifier(n_estimators=self.n_estimators,
+                                            min_samples_leaf=self.min_samples_leaf,
+                                            class_weight=class_weight,
+                                            random_state=0)
+
+    def get_hyperparameters(self):
+        return {"rf_n_estimators": self.n_estimators,
+                "rf_min_samples_leaf": self.min_samples_leaf,
+                "rf_class_weight": self.class_weight}
+
+    def set_hyperparameters(self, hyperparameters):
+        self.n_estimators       = int(_get_item(hyperparameters["rf_n_estimators"], 0))
+        self.min_samples_leaf   = int(_get_item(hyperparameters["rf_min_samples_leaf"], 0))
+        self.class_weight       = _get_item(hyperparameters["rf_class_weight"], 0)
+        self._update_model()
 
     def train(self, X, y, verbose=False):
         if verbose: log_print(f"Training Random Forest with provided data")
@@ -409,9 +544,20 @@ class SVMModel(SurrogateModel):
 
     def init_model(self, index_surrogate_model_binary=0):
         self.svm_model = self.cfg['support_vector_machine']['svm_model'][index_surrogate_model_binary]
+        self._update_model()
+
+    def _update_model(self):
         if self.svm_model == 'SVC':         self.model = SVC()
         elif self.svm_model == 'NuSVC':     self.model = NuSVC()
         elif self.svm_model == 'LinearSVC': self.model = LinearSVC()
+        else: raise ValueError(f"Unknown svm_model: {self.svm_model}")
+
+    def get_hyperparameters(self):
+        return {"svm_model": self.svm_model}
+
+    def set_hyperparameters(self, hyperparameters):
+        self.svm_model = _get_item(hyperparameters["svm_model"], 0)
+        self._update_model()
 
     def train(self, X, y, verbose=False):
         if verbose: log_print(f"Training Random Forest with provided data")

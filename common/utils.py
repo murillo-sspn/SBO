@@ -40,6 +40,20 @@ class Directories():
         shutil.rmtree(self.outputs_directory, ignore_errors=True)
         os.makedirs(self.outputs_directory, exist_ok=True)
 
+class OnlineDirectories():
+
+    # Online SBO: config.cfg, training and validation files are in the case directory and
+    # all generations are written to <case>/OPT. Nothing is deleted (restart).
+    def __init__(self, cfg_filepath):
+
+        self.cfg_filepath           = cfg_filepath
+        self.inputs_directory       = os.path.dirname(self.cfg_filepath)
+        self.case_directory         = self.inputs_directory
+        self.case_name              = os.path.basename(self.case_directory)
+        self.opt_directory          = os.path.join(self.case_directory, 'OPT')
+        self.outputs_directory      = self.opt_directory
+        os.makedirs(self.opt_directory, exist_ok=True)
+
 def csv_to_dict(filename):
     # Load the header (first row)
     with open(filename, 'r') as f:

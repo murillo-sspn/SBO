@@ -41,19 +41,26 @@ class SBO():
         self.INFilename = sys.argv[-1]
         self.INFile = self.DIR + self.INFilename
 
-        # Set directories structure
-        self.directories = Directories(self.INFile)
-
-        # Initialize logger
-        init_logger(log_dir=self.directories.outputs_directory)
-
         # Read inputs file
         self.IN = read_user_input(self.INFile)
+
+        if self.IN['general_info']['problem'][0] == 'online_SBO':
+            # Online SBO: keep previous generations (restart) and append to the log
+            self.directories = OnlineDirectories(self.INFile)
+            init_logger(log_dir=self.directories.opt_directory, stream=True)
+        else:
+            # Set directories structure
+            self.directories = Directories(self.INFile)
+            # Initialize logger
+            init_logger(log_dir=self.directories.outputs_directory)
 
         # -----------------------------------------------------#
         # Run
         # -----------------------------------------------------#
-        if self.IN['general_info']['problem'][0] == 'multistage_compressor':
+        if self.IN['general_info']['problem'][0] == 'online_SBO':
+            from src.driver_online_SBO import Driver
+            driver = Driver(self.IN, self.directories)
+        elif self.IN['general_info']['problem'][0] == 'multistage_compressor':
             from src.driver_multistage import Driver
             driver = Driver(self.IN, self.directories)
         elif self.IN['general_info']['problem'][0] == 'SBO':

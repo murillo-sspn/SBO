@@ -1,2 +1,8 @@
+_old
+OPT*
+__pycache__
 *.ods
 *.xlsx
+*.wbpj
+*_files
+run_powershell.txt

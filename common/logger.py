@@ -28,17 +28,23 @@ import time
 _log_messages = []          # stores messages in memory
 _log_file_path = None       # full path to the log file
 _t0 = 0     # initial time
+_stream = False             # append each message to the log file immediately
 flag_print = True
 
 # -----------------------------------------------------#
 # Logger
 # -----------------------------------------------------#
 
-def init_logger(log_dir="logs", log_filename="log.txt", overwrite=False):
-    """Initialize the logger (creates directory, sets file path)."""
-    global _log_file_path, _t0
+def init_logger(log_dir="logs", log_filename="log.txt", overwrite=False, stream=False):
+    """Initialize the logger (creates directory, sets file path).
+
+    stream=True appends every message to the log file as soon as it is printed,
+    so the log survives crashes and accumulates across restarts.
+    """
+    global _log_file_path, _t0, _stream
 
     _t0 = time.time()
+    _stream = stream
 
     os.makedirs(log_dir, exist_ok=True)
     _log_file_path = os.path.join(log_dir, log_filename)
@@ -64,7 +70,11 @@ def log_print(message):
 
     if flag_print:
         print(message)
-        _log_messages.append(format_message(message, time.time() - _t0))
+        formatted_message = format_message(message, time.time() - _t0)
+        _log_messages.append(formatted_message)
+        if _stream and _log_file_path:
+            with open(_log_file_path, "a", encoding="utf-8") as f:
+                f.write(formatted_message)
 
 
 def format_message(message, dt):
@@ -76,6 +86,9 @@ def save_log():
     global _log_messages
 
     log_print(f"Log saved to: {_log_file_path}")
+
+    if _stream:
+        return  # messages already written
 
     with open(_log_file_path, "w", encoding="utf-8") as f:
         f.writelines(_log_messages)

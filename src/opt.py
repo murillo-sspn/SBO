@@ -166,5 +166,78 @@ class Optimization():
         Constraints_Pareto = results.G
         return X_Pareto, Obj_Pareto[0], Constraints_Pareto
 
+    # -----------------------------------------------------#
+    # NSGA-II (vectorized: func evaluates the whole population)
+    # -----------------------------------------------------#
+
+    def optimize_nsga2_batch(self, func_batch, X_min, X_max, n_obj=1, n_constr=0, IN={}):
+        """ func_batch(X) -> (F, G), X: (n_pop, n_var), F: (n_pop, n_obj), G: (n_pop, n_constr)
+
+        Returns the best feasible solution (first Pareto point for n_obj > 1). If no feasible
+        solution is found, the least-violating individual of the final population is returned.
+        Returns X_opt, F_opt, G_opt, feasible
+        """
+
+        class BatchProblem(Problem):
+            def __init__(self):
+                super().__init__(n_var=len(X_min), n_obj=n_obj, n_ieq_constr=n_constr, xl=X_min, xu=X_max)
+
+            def _evaluate(self, X, out, *args, **kwargs):
+                F, G = func_batch(X)
+                out["F"] = F
+                if n_constr > 0:
+                    out["G"] = G
+
+        class PrintBestCallback(Callback):
+            def __init__(self, n_print):
+                super().__init__()
+                self.n_print = n_print
+
+            def notify(self, algorithm):
+                if algorithm.n_gen % self.n_print != 0:
+                    return
+                F = algorithm.pop.get("F")
+                CV = algorithm.pop.get("CV")
+                feasible = (CV[:, 0] <= 0) if CV is not None else np.ones(len(F), dtype=bool)
+                if np.any(feasible):
+                    best_F = float(np.amin(F[feasible, 0]))
+                    log_print(f"Gen {algorithm.n_gen}: f_best = {best_F:.6e}, feasible = {int(np.sum(feasible))}/{len(F)}")
+                else:
+                    log_print(f"Gen {algorithm.n_gen}: no feasible individual (min CV = {float(np.amin(CV)):.2e})")
+
+        nsga2_IN = IN['nsga2']
+        pop_size = nsga2_IN["opt_nsga2_pop_size"][0]
+        n_gen = nsga2_IN["opt_nsga2_n_gen"][0]
+        seed = nsga2_IN["opt_nsga2_seed"][0] if "opt_nsga2_seed" in nsga2_IN else None
+        algorithm = NSGA2(pop_size=pop_size,
+                          sampling=LHS(),
+                          crossover=SBX(prob=nsga2_IN["opt_nsga2_prob_cross"][0]),
+                          mutation=PolynomialMutation(prob=nsga2_IN["opt_nsga2_prob_mut"][0]))
+        log_print(f"NSGA-II: pop_size = {pop_size}, n_gen = {n_gen}, n_var = {len(X_min)}, "
+                  f"n_obj = {n_obj}, n_constr = {n_constr}")
+        results = minimize(problem=BatchProblem(),
+                           algorithm=algorithm,
+                           termination=('n_gen', n_gen),
+                           callback=PrintBestCallback(max(1, n_gen // 10)),
+                           seed=seed)
+
+        if results.X is not None:
+            X = np.atleast_2d(results.X)
+            F = np.atleast_2d(results.F)
+            i_best = int(np.argmin(F[:, 0]))
+            X_opt, F_opt = X[i_best], F[i_best]
+            feasible = True
+        else:
+            # No feasible solution: least constraint violation, then best objective
+            pop = results.pop
+            CV = pop.get("CV")[:, 0]
+            F = pop.get("F")
+            candidates = np.where(CV == np.amin(CV))[0]
+            i_best = candidates[np.argmin(F[candidates, 0])]
+            X_opt, F_opt = pop.get("X")[i_best], F[i_best]
+            feasible = False
+        F_opt, G_opt = func_batch(np.atleast_2d(X_opt))
+        return np.array(X_opt), F_opt[0], (G_opt[0] if n_constr > 0 else np.array([])), feasible
+
     def optimize_scipy(self, func, X_min, X_max, n_obj=1, n_constr=0, IN={}):
         pass

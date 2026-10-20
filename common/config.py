@@ -186,3 +186,35 @@ def read_user_input(file):
                     IN[section][key] = parse_value(value)
 
     return IN
+
+def read_raw_section(file, section):
+
+    """ Reads `section` of `file` without parsing the values (e.g. paths with spaces)
+
+    Parameters
+    ----------
+    file : str
+        Full path of file to be read
+    section : str
+        Section name
+
+    Returns
+    -------
+    dict
+        {key: raw string value}, empty if the section does not exist
+
+    """
+
+    raw = {}
+    current_section = None
+    with open(file, 'r') as infile:
+        for line in infile:
+            line = line.strip('\r\n')
+            if len(line) == 0:
+                continue
+            if line[0] == '[':
+                current_section = line.strip()[1:-1]
+            elif current_section == section and "=" in line and line[0] not in ['%', '#']:
+                key, value = line.split("=", 1)
+                raw[key.strip()] = value.strip()
+    return raw
