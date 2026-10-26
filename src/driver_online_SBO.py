@@ -38,6 +38,7 @@ from src.models import *
 from src.opt import Optimization
 from src.parametrization import rotor_and_diffuser_blades
 from src.cfx_runner import WorkbenchSettings, CFXRunner
+from src.plot_online import plot_design_variable, plot_output
 
 def print_banner():
     log_print("#######################################################")
@@ -88,6 +89,7 @@ class Driver(Optimization):
         self.selection_every        = self.IN['online']['selection_every'][0]
         self.bound_tolerance        = self.IN['online']['bound_tolerance'][0]
         self.n_local                = self.IN['online'].get('n_local', [15])[0]
+        self.baseline_index         = self.IN['online'].get('baseline_index', [0])[0]
         self.infill                 = self.IN['online']['infill'][0]
         self.range_update           = self.IN['online']['range_update'][0]
         for validation in [self.validation, self.validation_binary]:
@@ -127,6 +129,8 @@ class Driver(Optimization):
                 return
             gen += 1
         print_header(f"Maximum number of generations reached ({self.max_generations})")
+        # Completed generations are only read (no metamodels or CFD)
+        self.plot_history()
 
     def run_generation(self, gen):
 
@@ -704,9 +708,9 @@ class Driver(Optimization):
         with open(self._file(filename), "w") as f:
             f.write("\n".join(lines) + "\n")
 
-    def read_ranges(self, filename):
+    def read_ranges(self, filename, gen=None):
 
-        ranges = read_user_input(self._file(filename))['ranges']
+        ranges = read_user_input(self._file(filename, gen))['ranges']
         X_min = np.array([ranges[key_var][0] for key_var in self.keys_var_independent], dtype=float)
         X_max = np.array([ranges[key_var][1] for key_var in self.keys_var_independent], dtype=float)
         return X_min, X_max
@@ -746,6 +750,14 @@ class Driver(Optimization):
             self.set_status("cfd_submitted")
             self.cfx_runner.execute(run_dir, journal_path)
         result = self.cfx_runner.collect(run_dir)
+
+        # The design point was not created (e.g. project in use): stop, this generation runs again at the restart
+        if np.isnan(result["Convergence"]):
+            log_print(f"ERROR: {result['message']}")
+            log_print("Check the Workbench project and wb_stdout.txt / wb_stderr.txt; the CFD of this generation "
+                      "runs again at the restart.")
+            os.remove(os.path.join(run_dir, "run_info.json"))
+            return False
 
         # Print results
         log_print("")
@@ -796,6 +808,7 @@ class Driver(Optimization):
         log_print(f"    training_new.csv: {len(data)} points")
 
         self.write_history()
+        self.plot_history()
 
     def write_history(self):
 
@@ -824,6 +837,199 @@ class Driver(Optimization):
             writer = csv.writer(f)
             writer.writerow(header)
             writer.writerows(data)
+
+    def plot_history(self):
+
+        # Plots of each design variable (with its range), objective and constraint of every design: baseline,
+        # initial DoE (training and validation data of GEN_0000) and optimum of each generation: OPT/Plots
+        gens = []
+        while os.path.isfile(self._file("cfd_result.json", len(gens))):
+            gens.append(len(gens))
+        if len(gens) == 0:
+            return
+        print_section("Plots of the optimization history")
+        output_directory = os.path.join(self.opt_directory, "Plots")
+        opt_obj = self.IN['optimization']['opt_obj']
+        opt_constraints = self.IN['optimization']['opt_constraints']
+        opt_constraints_baseline = self.IN['optimization']['opt_constraints_baseline']
+        opt_constraints_above_below = self.IN['optimization']['opt_constraints_above_below_baseline']
+        X_min_0, X_max_0 = self.read_ranges("ranges.cfg", 0)
+
+        # Monitors: other quantities of the datasets / Workbench outputs plotted in the same way ([plots] monitors)
+        monitors = self.IN.get('plots', {}).get('monitors', [])
+
+        # Designs in evaluation order
+        phase, X, X_min, X_max, convergence = [], [], [], [], []
+        outputs, predicted = {}, {}
+        for key in self.keys_var_dependent + self.keys_var_dependent_binary + monitors:
+            outputs[key], predicted[key] = [], []
+
+        # Baseline: row baseline_index of the training data of the case (dataset_training of the config file)
+        dataset_case = csv_to_dict(self.dataset_training_file)
+        X_baseline = self._get_X_from_dataset(dataset_case)[self.baseline_index]
+        width = np.where(X_max_0 > X_min_0, X_max_0 - X_min_0, 1.0)
+        found_baseline = False
+
+        # Initial DoE (training and validation data of GEN_0000)
+        for filename in ["training.csv", "validation.csv"]:
+            dataset = csv_to_dict(self._file(filename, 0))
+            X_dataset = self._get_X_from_dataset(dataset)
+            for i in range(len(X_dataset)):
+                is_baseline = not found_baseline and np.amax(np.abs(X_dataset[i] - X_baseline) / width) < 1e-9
+                found_baseline = found_baseline or is_baseline
+                phase.append("baseline" if is_baseline else "DoE")
+                X.append(X_dataset[i])
+                X_min.append(X_min_0)
+                X_max.append(X_max_0)
+                convergence.append(dataset["Convergence"][0][i] if "Convergence" in dataset else 1)
+                for key in outputs.keys():
+                    outputs[key].append(dataset[key][0][i] if key in dataset else np.nan)
+                    predicted[key].append(np.nan)
+
+        # Baseline not in the data of this run (e.g. added to the training data later): first design
+        if not found_baseline:
+            log_print("    Baseline design not in the data of this run: taken from " + self.dataset_training_file)
+            phase.insert(0, "baseline")
+            X.insert(0, X_baseline)
+            X_min.insert(0, X_min_0)
+            X_max.insert(0, X_max_0)
+            convergence.insert(0, dataset_case["Convergence"][0][self.baseline_index]
+                               if "Convergence" in dataset_case else 1)
+            for key in outputs.keys():
+                outputs[key].insert(0, dataset_case[key][0][self.baseline_index] if key in dataset_case else np.nan)
+                predicted[key].insert(0, np.nan)
+
+        # Optimization: optimum of each generation, ranges used to find it, CFD result and prediction
+        x_optimization = len(phase)
+        for gen in gens:
+            with open(self._file("optimum.json", gen), "r") as f:
+                optimum = json.load(f)
+            with open(self._file("cfd_result.json", gen), "r") as f:
+                result = json.load(f)
+            ranges_min, ranges_max = self.read_ranges("ranges.cfg", gen)
+            phase.append("optimization")
+            X.append([optimum["dvs_doe"][key] for key in self.keys_var_independent])
+            X_min.append(ranges_min)
+            X_max.append(ranges_max)
+            convergence.append(result["Convergence"])
+            for key in outputs.keys():
+                if key == "Convergence":
+                    outputs[key].append(result["Convergence"])
+                else:
+                    outputs[key].append(result["outputs"].get(key, np.nan))
+                predicted[key].append(optimum["predicted"].get(key, np.nan))
+
+        phase = np.array(phase)
+        X, X_min, X_max = np.array(X), np.array(X_min), np.array(X_max)
+        convergence = np.array(convergence, dtype=float)
+        for key in outputs.keys():
+            outputs[key] = np.array(outputs[key], dtype=float)
+            predicted[key] = np.array(predicted[key], dtype=float)
+
+        # Feasible designs (CFD): converged and continuous constraints satisfied
+        feasible = (convergence == 1)
+        for i, key in enumerate(opt_constraints):
+            if key in self.keys_var_dependent:
+                if opt_constraints_above_below[i] == "above":
+                    feasible = feasible & (outputs[key] >= opt_constraints_baseline[i])
+                else:
+                    feasible = feasible & (outputs[key] <= opt_constraints_baseline[i])
+
+        # Best feasible value so far of the (first) objective and optimum designs that improved it
+        key_obj = opt_obj[0]
+        sign = 1.0 if 'max' in self.IN['optimization']['opt_min_max'][0] else -1.0
+        best = np.nan * np.ones(len(phase))
+        new_best = np.zeros(len(phase), dtype=bool)
+        best_value = np.nan
+        for i in range(len(phase)):
+            if feasible[i] and (np.isnan(best_value) or sign * outputs[key_obj][i] > sign * best_value):
+                best_value = outputs[key_obj][i]
+                new_best[i] = (phase[i] == "optimization")
+            best[i] = best_value
+
+        # design: evaluation order (0 = first design of the DoE), generation: -1 for the initial DoE
+        generation = np.array([-1] * x_optimization + list(range(len(phase) - x_optimization)))
+        history = {"design": np.arange(len(phase)), "generation": generation, "phase": phase,
+                   "convergence": convergence, "new_best": new_best}
+
+        # Design variables
+        for i, key in enumerate(self.keys_var_independent):
+            percent, hard_min, hard_max = self.range_expansion[key]
+            plot_design_variable(output_directory, key, history, X[:, i], X_min[:, i], X_max[:, i],
+                                 hard_min=hard_min, hard_max=hard_max)
+        # Objectives
+        for key in opt_obj:
+            plot_output(output_directory, key, history, outputs[key], predicted[key],
+                        best=(best if key == key_obj else None))
+        # Constraints
+        for i, key in enumerate(opt_constraints):
+            plot_output(output_directory, key, history, outputs[key], predicted[key],
+                        limit=opt_constraints_baseline[i],
+                        limit_label=f"constraint ({opt_constraints_above_below[i]} {opt_constraints_baseline[i]:g})",
+                        binary=(key in self.keys_var_dependent_binary), kind="constraint")
+        # Monitors
+        for key in monitors:
+            if np.all(np.isnan(outputs[key])):
+                log_print(f"    WARNING: monitor {key} not found in the datasets or in the CFD outputs")
+                continue
+            plot_output(output_directory, key, history, outputs[key], predicted[key], kind="monitor")
+
+        log_print(f"    Plots saved in {output_directory}")
+
+        # Summary: baseline versus best feasible design (CFD)
+        i_baseline = np.where(phase == "baseline")[0]
+        i_baseline = i_baseline[0] if len(i_baseline) > 0 else None
+        i_optimum = np.where(feasible & (outputs[key_obj] == best[-1]))[0][0]
+        self.write_summary(i_baseline, i_optimum, phase, generation, X, X_min, X_max, outputs, predicted,
+                           monitors)
+
+    def write_summary(self, i_baseline, i_optimum, phase, generation, X, X_min, X_max, outputs, predicted,
+                      monitors):
+
+        # Brief report of the results (log and OPT/summary.txt)
+        def number(value):
+            return "none" if not np.isfinite(value) else f"{value:.6g}"
+
+        def interval(lower, upper):
+            return f"[{number(lower)}, {number(upper)}]"
+
+        opt_constraints = self.IN['optimization']['opt_constraints']
+        if phase[i_optimum] == "optimization":
+            origin = f"GEN_{generation[i_optimum]:04d}"
+        else:
+            origin = f"{phase[i_optimum]} (design {i_optimum})"
+        lines = ["", "Summary of the results",
+                 f"Optimum: best feasible design (CFD), {origin}; baseline: design {i_baseline}", "",
+                 f"    {'design variable':<32}{'baseline':>12}{'optimum':>12}   {'initial range':<26}"
+                 f"{'final range':<26}{'hard limits':<26}"]
+        for i, key in enumerate(self.keys_var_independent):
+            percent, hard_min, hard_max = self.range_expansion[key]
+            baseline = X[i_baseline, i] if i_baseline is not None else np.nan
+            lines.append(f"    {key:<32}{number(baseline):>12}{number(X[i_optimum, i]):>12}   "
+                         f"{interval(X_min[0, i], X_max[0, i]):<26}{interval(X_min[-1, i], X_max[-1, i]):<26}"
+                         f"{interval(hard_min, hard_max):<26}")
+        lines += ["", f"    {'quantity':<44}{'baseline':>12}{'optimum':>12}{'difference':>24}{'predicted':>12}"]
+        rows = []
+        for i, key in enumerate(self.IN['optimization']['opt_obj']):
+            rows.append((key, f"objective ({self.IN['optimization']['opt_min_max'][i]})"))
+        for i, key in enumerate(opt_constraints):
+            rows.append((key, f"constraint ({self.IN['optimization']['opt_constraints_above_below_baseline'][i]} "
+                              f"{self.IN['optimization']['opt_constraints_baseline'][i]:g})"))
+        for key in monitors:
+            rows.append((key, "monitor"))
+        for key, kind in rows:
+            if key not in outputs:
+                continue
+            baseline = outputs[key][i_baseline] if i_baseline is not None else np.nan
+            optimum = outputs[key][i_optimum]
+            difference = optimum - baseline
+            relative = f" ({100 * difference / abs(baseline):+.2f}%)" if np.isfinite(baseline) and baseline != 0 else ""
+            lines.append(f"    {key + ' - ' + kind:<44}{number(baseline):>12}{number(optimum):>12}"
+                         f"{f'{difference:+.4g}' + relative:>24}{number(predicted[key][i_optimum]):>12}")
+        for line in lines:
+            log_print(line)
+        with open(os.path.join(self.opt_directory, "summary.txt"), "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
 
     # -----------------------------------------------------#
     # Plotting

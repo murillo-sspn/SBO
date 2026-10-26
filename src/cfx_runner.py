@@ -80,6 +80,8 @@ class WorkbenchSettings():
         self.script_version     = raw.get("script_version", "19.2.120")
         self.wb_exe             = raw.get("wb_exe", r"C:\Program Files\ANSYS Inc\v192\Framework\bin\Win64\runwb2.exe")
         self.timeout_s          = int(float(raw.get("timeout_s", 21600)))
+        # Workbench is stopped if the solver does not start (no .out file) within this time (geometry/mesh failure)
+        self.solver_start_timeout_s = int(float(raw.get("solver_start_timeout_s", 7200)))
         self.cfx_system         = raw.get("cfx_system", "CFX")
         self.retain_solution    = parse_bool(raw.get("retain_solution", "true"))
         self.run_workbench      = parse_bool(raw.get("run_workbench", "true"))
@@ -233,23 +235,62 @@ def generate_wb_journal(journal_path, project_file, parameters, settings, result
 # Workbench execution
 # -----------------------------------------------------#
 
-def run_workbench(journal_path, wb_exe, timeout_s, log_dir):
-    """ Runs runwb2 in batch mode. Returns (return code or None, message) """
+def run_workbench(journal_path, wb_exe, timeout_s, log_dir, project_files_dir=None, solver_start_timeout_s=None):
+    """ Runs runwb2 in batch mode. Returns (return code or None, message)
+
+    Stopped after timeout_s, or after solver_start_timeout_s if no solver .out file was written in
+    project_files_dir (Workbench waiting on a geometry or mesh failure)
+    """
     cmd = [wb_exe, "-B", "-R", journal_path, "-X"]
     log_print(f"Running: {' '.join(cmd)}")
+    t_start = time.time()
     with open(os.path.join(log_dir, "wb_stdout.txt"), "w") as fo, \
          open(os.path.join(log_dir, "wb_stderr.txt"), "w") as fe:
         proc = subprocess.Popen(cmd, stdout=fo, stderr=fe, cwd=log_dir)
-        try:
-            return_code = proc.wait(timeout=timeout_s)
-        except subprocess.TimeoutExpired:
-            # Kill the whole process tree (runwb2 and its children)
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
-            proc.wait()
-            return None, f"timeout after {timeout_s} s"
+        message = None
+        solver_started = False
+        while proc.poll() is None:
+            time.sleep(30)
+            dt = time.time() - t_start
+            if not solver_started and project_files_dir is not None:
+                solver_started = len(_new_out_files(project_files_dir, t_start)) > 0
+            if dt > timeout_s:
+                message = f"timeout after {timeout_s} s"
+            elif solver_start_timeout_s and not solver_started and dt > solver_start_timeout_s:
+                message = (f"solver did not start within {solver_start_timeout_s} s "
+                           f"(geometry or mesh failure?)")
+            if message is not None:
+                # Kill the whole process tree (runwb2 and its children)
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
+                proc.wait()
+                return None, message
+        return_code = proc.returncode
     if return_code != 0:
         return return_code, f"Workbench exited with code {return_code} (see wb_stderr.txt)"
     return return_code, "Workbench run completed"
+
+
+def _new_out_files(project_files_dir, t_start):
+    return [f for f in glob.glob(os.path.join(project_files_dir, "**", "*.out"), recursive=True)
+            if os.path.getmtime(f) >= t_start - 1]
+
+
+def workbench_is_running():
+    """ True if a Workbench process (runwb2, AnsysFW*) is running """
+    out = subprocess.run(["tasklist"], capture_output=True, text=True).stdout.lower()
+    return ("runwb2" in out) or ("ansysfw" in out)
+
+
+def remove_stale_lock(project_file):
+    """ A Workbench killed by a timeout leaves <project>_files/.lock and the next run cannot open the project.
+    The lock is removed if no Workbench is running; otherwise an exception is raised (project in use) """
+    lock_file = os.path.join(os.path.splitext(project_file)[0] + "_files", ".lock")
+    if not os.path.isfile(lock_file):
+        return
+    if workbench_is_running():
+        raise Exception(f"Workbench project in use ({lock_file}). Close Workbench and run again.")
+    log_print(f"WARNING: removing stale lock of the Workbench project: {lock_file}")
+    os.remove(lock_file)
 
 
 # -----------------------------------------------------#
@@ -312,8 +353,7 @@ def check_convergence_out_file(settings, run_dir, project_files_dir, t_start, ou
     """ Converged if the solver stopped by an interrupt condition or residual target
     (parameter stabilization), not converged if it stopped at the maximum number of
     iterations or did not finish """
-    out_files = [f for f in glob.glob(os.path.join(project_files_dir, "**", "*.out"), recursive=True)
-                 if os.path.getmtime(f) >= t_start - 1]
+    out_files = _new_out_files(project_files_dir, t_start)
     if not out_files:
         return 0, "no solver .out file written during this run"
     out_file = max(out_files, key=os.path.getmtime)
@@ -409,6 +449,7 @@ class CFXRunner():
             self._copy_project(project_file)
         elif self.settings.mode == "shared_new_dp":
             log_print(f"Adding design point to {project_file}")
+        remove_stale_lock(project_file)
 
         parameters = {}
         for name, value in cfd_values.items():
@@ -432,7 +473,9 @@ class CFXRunner():
         t_start = time.time()
         info = {"t_start": t_start, "project_file": self._project_file(run_dir), "mode": self.settings.mode}
         _write_json(os.path.join(run_dir, "run_info.json"), info)
-        return_code, message = run_workbench(journal_path, self.settings.wb_exe, self.settings.timeout_s, run_dir)
+        return_code, message = run_workbench(journal_path, self.settings.wb_exe, self.settings.timeout_s, run_dir,
+                                             project_files_dir=self._files_dir(info["project_file"]),
+                                             solver_start_timeout_s=self.settings.solver_start_timeout_s)
         info.update({"t_end": time.time(), "return_code": return_code, "message": message})
         _write_json(os.path.join(run_dir, "run_info.json"), info)
         log_print(message)
@@ -471,6 +514,10 @@ class CFXRunner():
         # converged before the failure (e.g. timeout during post processing); the outputs are nan in that case
         if info.get("return_code") != 0 and convergence == 1:
             messages.append("Workbench failed after the solver converged: outputs not available")
+        # The journal did not create the design point (e.g. project could not be opened): convergence unknown
+        if not os.path.isfile(os.path.join(run_dir, "dp_name.txt")):
+            messages.append("design point not created: convergence unknown")
+            return {"outputs": outputs, "Convergence": np.nan, "message": "; ".join(m for m in messages if m)}
         return {"outputs": outputs, "Convergence": int(convergence),
                 "message": "; ".join(m for m in messages if m)}
 
